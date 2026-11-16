@@ -115,6 +115,7 @@ uploading and extracting the ZIP. The wizard:
 | Missing styles / assets | `public_html/build` must exist — re-extract the ZIP |
 | Installer already locked | `stunningtouch-app/.installed` exists — the app is installed; never reinstall over an existing database |
 | Wrong document root | Move the two folders per Layout 1, or apply Layout 2 |
+| "checkdir error: Permission denied" while extracting / can't delete stale `stunningtouch-app` | Old folders are owned by the web-server user. Use the installer's **Delete stale folders** action (requirements step), or set the folders to 755 in File Manager and delete; the host can reset ownership if needed |
 
 ## Security notes
 

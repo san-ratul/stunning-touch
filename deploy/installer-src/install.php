@@ -316,6 +316,10 @@ function handle_requirements(): void
     $add('.env does not exist yet (fresh installation)', $appDir !== '' && ! is_file($appDir.'/.env'), 'stunningtouch-app/.env already exists — this application appears to be installed. Remove the installer directory instead of reinstalling.');
     $add('Application directory resolvable', $appDir !== '', 'The installer could not find stunningtouch-app/ next to public_html/. Use the manual path field in the next step.');
 
+    // Stale / broken previous extraction: the app dir exists but is not a
+    // complete package. Offer the authorized cleanup step.
+    $staleDirs = stale_app_dirs();
+
     $rows = '';
     foreach ($checks as [$name, $ok, $fix]) {
         $rows .= '<tr><td class="'.($ok ? 'ok' : 'bad').'">'.($ok ? '✓' : '✗').'</td><td>'.e($name).'</td><td>'.($ok ? '' : e($fix)).'</td></tr>';
@@ -331,7 +335,160 @@ function handle_requirements(): void
         $content .= '<p class="note">Fix the failed checks, then <a href="?step=requirements">re-run the checks</a>.</p>';
     }
 
+    if ($staleDirs !== []) {
+        $list = implode(', ', array_map('e', $staleDirs));
+        $content .= '<h2 style="margin-top:22px">Previous extraction detected</h2>
+        <p class="lead">These folders look like leftovers from a previous failed extraction (incomplete application files). You can remove them here — the installer runs as the web-server user, which can often delete files that cPanel File Manager cannot. <strong>They will be permanently deleted.</strong></p>
+        <p><code>'.$list.'</code></p>
+        <form method="post" action="?step=cleanup">'.csrf_field().'<button type="submit">Delete stale folders &amp; re-check</button></form>';
+    }
+
     echo installer_shell('Requirements', $content, ['current' => 1]);
+}
+
+/* --------------------------------------------------------------------------
+ * Step: cleanup of stale / broken previous extractions
+ * ------------------------------------------------------------------------ */
+
+function stale_app_dirs(): array
+{
+    // Sentinel files spanning every packaged directory: a complete (or
+    // correctly-installed) application has all of them.
+    $sentinels = [
+        'app/Models/User.php',
+        'app/Providers/AppServiceProvider.php',
+        'app/Services/Ai/AiProviderService.php',
+        'resources/views/welcome.blade.php',
+        'routes/web.php',
+        'config/app.php',
+        'bootstrap/app.php',
+        'vendor/composer/installed.json',
+        'vendor/laravel/framework/src/Illuminate/Support/Str.php',
+    ];
+
+    $stale = [];
+
+    foreach (app_dir_candidates() as $dir) {
+        if (! is_dir($dir)) {
+            continue;
+        }
+
+        $missing = 0;
+        foreach ($sentinels as $file) {
+            if (! is_file($dir.'/'.$file)) {
+                $missing++;
+            }
+        }
+
+        if ($missing > 0) {
+            $stale[] = $dir;
+        }
+    }
+
+    // Nested document root from extracting the ZIP inside public_html
+    // (previous package layout): only when it clearly contains our content.
+    $nested = dirname(__DIR__).'/public_html';
+    if (is_file($nested.'/build/manifest.json') && is_file($nested.'/index.php')) {
+        $stale[] = $nested;
+    }
+
+    return $stale;
+}
+
+function handle_cleanup(): void
+{
+    if (empty($_SESSION['authorized'])) {
+        redirect('token', 'Authorization required.', true);
+    }
+
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+        redirect('requirements');
+    }
+
+    verify_csrf();
+
+    $results = [];
+
+    foreach (stale_app_dirs() as $dir) {
+        // Best-effort permission normalization so deletion works even when
+        // the files were created with restrictive modes.
+        normalize_permissions($dir);
+
+        $ok = recursive_delete($dir);
+        $results[] = ($ok ? '✓ deleted: ' : '✗ could not fully delete: ').$dir;
+    }
+
+    installer_note('Cleanup attempted: '.count($results).' path(s)');
+
+    $list = implode('<br>', array_map('e', $results));
+    $remaining = stale_app_dirs();
+
+    if ($remaining === []) {
+        redirect('requirements', 'Stale folders removed successfully. Now re-extract the deployment ZIP and re-run the requirements check.');
+    }
+
+    $_SESSION['notice'] = [
+        'message' => 'Partially cleaned. Some paths could not be deleted by the web server (they are owned by your FTP/File Manager user):<br>'.$list.
+            '<br><br>Fix in cPanel: select each folder → Permissions → set 755 (or 777 temporarily) → apply to all items → delete. If deletion still fails, contact your hosting provider to reset the ownership.',
+        'error' => true,
+    ];
+    header('Location: ?step=requirements');
+    exit;
+}
+
+/**
+ * Best-effort chmod so web-server-owned and restrictive-mode files can be
+ * removed by the following delete.
+ */
+function normalize_permissions(string $dir): void
+{
+    if (! is_dir($dir)) {
+        return;
+    }
+
+    @chmod($dir, 0755);
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $item) {
+        if ($item->isDir()) {
+            @chmod($item->getPathname(), 0755);
+        } else {
+            @chmod($item->getPathname(), 0644);
+        }
+    }
+}
+
+/**
+ * @return bool true when the path no longer exists
+ */
+function recursive_delete(string $dir): bool
+{
+    if (! is_dir($dir)) {
+        return true;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    foreach ($iterator as $item) {
+        try {
+            if ($item->isDir() && ! $item->isLink()) {
+                @rmdir($item->getPathname());
+            } else {
+                @unlink($item->getPathname());
+            }
+        } catch (Throwable) {
+            // Keep going; report failure at the end.
+        }
+    }
+
+    return @rmdir($dir) || ! is_dir($dir);
 }
 
 /* --------------------------------------------------------------------------
@@ -850,7 +1007,7 @@ function disable_installer_script(): void
  * ------------------------------------------------------------------------ */
 
 $step = (string) ($_GET['step'] ?? 'token');
-$allowed = ['token', 'requirements', 'config', 'database'];
+$allowed = ['token', 'requirements', 'config', 'database', 'cleanup'];
 
 if (! in_array($step, $allowed, true)) {
     $step = 'token';
@@ -862,6 +1019,7 @@ try {
         'requirements' => handle_requirements(),
         'config' => handle_config(),
         'database' => handle_database(),
+        'cleanup' => handle_cleanup(),
     };
 } catch (Throwable $e) {
     http_response_code(500);

@@ -155,4 +155,18 @@ TROUBLESHOOTING
 - The installer key is missing/wrong:
   The key file ships inside the ZIP (installer/INSTALL-KEY.txt) and a
   copy was saved locally as deploy/INSTALL-KEY.local.txt at build time.
+
+- "checkdir error: Permission denied" while extracting / cannot delete
+  stunningtouch-app (leftover folders from a failed extraction):
+  The old folders are owned by the web-server user. Two ways to fix:
+  a) Open the installer and use its "Delete stale folders" action on the
+     requirements step (it runs as the web-server user and can usually
+     delete what File Manager cannot), then re-extract the ZIP.
+  b) Manually: cPanel File Manager -> select each stale folder ->
+     Permissions -> 755 (apply to all items) -> delete. If that still
+     fails, ask your host to reset ownership to your cPanel user.
+  Then re-extract the ZIP. Prefer extracting into the HOME directory
+  (Layout 1); if you extract inside public_html, move the nested
+  public_html/public_html contents up one level and use
+  LAYOUT2-root-public-htaccess.txt as the root .htaccess.
 ================================================================
