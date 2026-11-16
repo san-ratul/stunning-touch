@@ -217,20 +217,46 @@ Check (-not $forbidden) ("Forbidden files in package: " + (($forbidden | ForEach
 # ---------------------------------------------------------------------------
 Write-Host "-> creating $zip" -ForegroundColor Gray
 
-# Compress-Archive can hit transient file locks (local web server / AV).
-$zipOk = $false
-for ($try = 1; $try -le 5; $try++) {
-    try {
-        Compress-Archive -Path (Join-Path $pkg '*') -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop
-        $zipOk = $true
-        break
-    } catch {
-        if (Test-Path $zip) { Remove-Item $zip -Force }
-        Write-Host "   zip attempt $try failed ($($_.Exception.Message.Split("`n")[0].Trim())) — retrying..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 2
+# Build the ZIP with the System.IO.Compression API and FORWARD-SLASH entry
+# names. PowerShell 5.1's Compress-Archive writes backslash separators,
+# which non-Windows extractors (cPanel!) mishandle — nested vendor files
+# go missing on the server. Per-file retry absorbs transient local locks.
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+if (Test-Path $zip) { Remove-Item $zip -Force }
+
+$archiveStream = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
+$archive = New-Object System.IO.Compression.ZipArchive($archiveStream, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    $baseLen = $pkg.Length + 1
+    $files = Get-ChildItem $pkg -Recurse -File
+    Check ($files.Count -gt 100) "Staging directory unexpectedly small ($($files.Count) files)."
+    foreach ($file in $files) {
+        $entryName = $file.FullName.Substring($baseLen).Replace('\', '/')
+        $copied = $false
+        for ($try = 1; $try -le 5 -and -not $copied; $try++) {
+            try {
+                $entry = $archive.CreateEntry($entryName, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entryStream = $entry.Open()
+                $fileStream = [System.IO.File]::OpenRead($file.FullName)
+                try {
+                    $fileStream.CopyTo($entryStream)
+                    $copied = $true
+                } finally {
+                    $fileStream.Dispose()
+                    $entryStream.Dispose()
+                }
+            } catch {
+                if ($try -eq 5) { Fail "Could not read '$($file.FullName)' after 5 attempts: $($_.Exception.Message)" }
+                Start-Sleep -Milliseconds 600
+            }
+        }
     }
+} finally {
+    $archive.Dispose()
+    $archiveStream.Dispose()
 }
-Check $zipOk "Could not create the ZIP after 5 attempts (a file stayed locked)."
 
 $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $zipSha -Value "$hash  stunningtouch-deploy.zip"
