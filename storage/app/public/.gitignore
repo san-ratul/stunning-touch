@@ -1,0 +1,7 @@
+*
+!.gitignore
+!media
+!media/.gitignore
+!media/covers
+!media/covers/.gitignore
+

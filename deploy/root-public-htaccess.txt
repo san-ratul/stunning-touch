@@ -1,0 +1,32 @@
+# ============================================================
+# Stunning Touch — ROOT .htaccess for LAYOUT 2
+# Use ONLY if the host forces the app inside public_html,
+# e.g.  /home/USER/public_html/stunningtouch-app/  (full app)
+# Place this file at /home/USER/public_html/.htaccess
+# ============================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ---- HARD DENY sensitive app files/dirs ----
+    RewriteRule ^stunningtouch-app/(\.env|\.env\..*|composer\.(json|lock)|package\.json|vite\.config\.js|phpunit\.xml|artisan)$ - [F,L]
+    RewriteRule ^stunningtouch-app/(app|bootstrap|config|database|resources|routes|storage|tests|vendor)/ - [F,L]
+    RewriteRule ^stunningtouch-app/storage/ - [F,L]
+
+    # Serve everything else from the app's public directory
+    RewriteCond %{REQUEST_URI} !^/stunningtouch-app/public/
+    RewriteRule ^(.*)$ stunningtouch-app/public/$1 [L]
+
+    # Block dotfiles
+    RewriteRule ^(\.)[^/]+ - [F,L]
+</IfModule>
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

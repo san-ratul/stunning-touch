@@ -1,0 +1,71 @@
+================================================================
+ STUNNING TOUCH — DEPLOYMENT CHECKLIST (cPanel, no SSH)
+================================================================
+
+Package layout:
+  stunningtouch-app/   -> upload to /home/USERNAME/stunningtouch-app
+  public_html/         -> contents go into /home/USERNAME/public_html
+  LAYOUT2-root-public-htaccess.txt -> only if host forces app inside public_html
+
+STEPS
+-----
+1. Create MySQL DB + user in cPanel (MySQL Databases). Grant ALL to the user.
+
+2. Upload stunningtouch-deploy.zip to /home/USERNAME/ and extract there.
+   Result: /home/USERNAME/stunningtouch-app/  and  /home/USERNAME/public_html/
+
+3. Create the .env:
+   - Copy stunningtouch-app/.env.production.template to stunningtouch-app/.env
+   - Fill DB_DATABASE / DB_USERNAME / DB_PASSWORD (from step 1)
+   - Set APP_URL to your domain
+   - Set SCHEDULER_SECRET to a long random string
+   - Generate APP_KEY on your LOCAL machine:
+       php artisan key:generate --show
+     and paste the value into APP_KEY.
+
+4. Import the database:
+   Option A: import a dump exported from your local seeded database
+             (phpMyAdmin export -> import on server).
+   Option B: if the host provides a PHP Laravel runner, use:
+             php artisan migrate --force --seed
+   Never run migrate:fresh on production.
+
+5. Permissions (cPanel File Manager -> Permissions):
+   - storage/ (recursive)      -> 755
+   - bootstrap/cache (recursive) -> 755
+
+6. Storage symlink (optional; needed only for uploaded media URLs):
+   If your host allows symlinks via cron/SSH alternatives, link
+   /home/USERNAME/stunningtouch-app/public/storage ->
+   /home/USERNAME/stunningtouch-app/storage/app/public
+   (Media/ad image URLs are of the form /storage/<path>.)
+
+7. Verify (browse):
+   - https://yourdomain/                (homepage)
+   - https://yourdomain/image-compressor (a tool page)
+   - https://yourdomain/admin/login     (sign in; CHANGE the seeded
+        admin@stunningtouch.com / ChangeMe123! password immediately)
+   - https://yourdomain/sitemap.xml
+   - https://yourdomain/robots.txt
+   - https://yourdomain/.env            (MUST be 403/404, never content)
+
+8. Cron (cPanel -> Cron Jobs), once per minute:
+   * * * * * cd /home/USERNAME/stunningtouch-app && php artisan schedule:run >> /dev/null 2>&1
+   If CLI cron is unavailable, use the web endpoint:
+   * * * * * wget -q -O /dev/null "https://yourdomain/run-scheduler/YOUR_SECRET"
+   (see .docs/CRON_SETUP.md)
+
+9. Optional performance: if you can run PHP once (cron or terminal),
+   run: cd stunningtouch-app && php artisan optimize
+   (Caches config/routes/views into bootstrap/cache.)
+
+LAYOUT 2 (host forces app inside public_html)
+---------------------------------------------
+1. Extract the WHOLE package inside public_html instead, so you get:
+      /home/USERNAME/public_html/stunningtouch-app/
+      /home/USERNAME/public_html/public_html/   -> move its contents up one level
+                                                    into /home/USERNAME/public_html/
+2. Copy LAYOUT2-root-public-htaccess.txt to /home/USERNAME/public_html/.htaccess
+3. Verify https://yourdomain/.env and https://yourdomain/stunningtouch-app/.env
+   both return 403/404.
+================================================================
