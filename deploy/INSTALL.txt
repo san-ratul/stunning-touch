@@ -1,71 +1,158 @@
 ================================================================
- STUNNING TOUCH — DEPLOYMENT CHECKLIST (cPanel, no SSH)
+ STUNNING TOUCH — cPanel DEPLOYMENT GUIDE (no SSH, no Composer,
+ no Node.js on the server)
 ================================================================
 
-Package layout:
-  stunningtouch-app/   -> upload to /home/USERNAME/stunningtouch-app
-  public_html/         -> contents go into /home/USERNAME/public_html
-  LAYOUT2-root-public-htaccess.txt -> only if host forces app inside public_html
+The deployment ZIP contains EVERYTHING the server needs: the Laravel
+application with production vendor/ dependencies, compiled frontend
+assets, and a temporary browser installer.
+
+Package contents
+----------------
+  stunningtouch-app/              full Laravel app + vendor/ (KEEP OUTSIDE public_html)
+  public_html/                    document root (index.php, .htaccess, build assets)
+  installer/                      temporary browser installer + INSTALL-KEY.txt
+  INSTALL.txt                     this file
+  LAYOUT2-root-public-htaccess.txt  only for forced Layout 2 (see bottom)
+
+Before you start
+----------------
+  - The installer key is in installer/INSTALL-KEY.txt (it ships inside the
+    ZIP; the builder also saved a copy locally in deploy/INSTALL-KEY.local.txt).
+  - Create the MySQL database first (step 1) — the installer needs it.
 
 STEPS
 -----
-1. Create MySQL DB + user in cPanel (MySQL Databases). Grant ALL to the user.
 
-2. Upload stunningtouch-deploy.zip to /home/USERNAME/ and extract there.
-   Result: /home/USERNAME/stunningtouch-app/  and  /home/USERNAME/public_html/
+1. CREATE THE DATABASE
+   cPanel -> MySQL Databases:
+   - create a database (e.g. cpuser_stunningtouch)
+   - create a database user
+   - grant the user ALL PRIVILEGES on that database
+   - note the exact database name, user and password
 
-3. Create the .env:
-   - Copy stunningtouch-app/.env.production.template to stunningtouch-app/.env
-   - Fill DB_DATABASE / DB_USERNAME / DB_PASSWORD (from step 1)
-   - Set APP_URL to your domain
-   - Set SCHEDULER_SECRET to a long random string
-   - Generate APP_KEY on your LOCAL machine:
-       php artisan key:generate --show
-     and paste the value into APP_KEY.
+2. UPLOAD & EXTRACT
+   cPanel -> File Manager:
+   - upload stunningtouch-deploy.zip to /home/USERNAME/ (the home
+     directory, NOT public_html)
+   - extract it there
+   - result: /home/USERNAME/stunningtouch-app/ and /home/USERNAME/public_html/
 
-4. Import the database:
-   Option A: import a dump exported from your local seeded database
-             (phpMyAdmin export -> import on server).
-   Option B: if the host provides a PHP Laravel runner, use:
-             php artisan migrate --force --seed
-   Never run migrate:fresh on production.
+   NOTE: if public_html already contains files from an old site, either
+   back them up first or deploy to a subdomain instead.
 
-5. Permissions (cPanel File Manager -> Permissions):
-   - storage/ (recursive)      -> 755
-   - bootstrap/cache (recursive) -> 755
+3. VERIFY PERMISSIONS (usually not needed, but check)
+   cPanel -> File Manager -> Permissions:
+   - stunningtouch-app/storage/        -> 755 (recursive)
+   - stunningtouch-app/bootstrap/cache -> 755 (recursive)
+   The installer verifies writability and will tell you if something is off.
 
-6. Storage symlink (optional; needed only for uploaded media URLs):
-   If your host allows symlinks via cron/SSH alternatives, link
-   /home/USERNAME/stunningtouch-app/public/storage ->
-   /home/USERNAME/stunningtouch-app/storage/app/public
-   (Media/ad image URLs are of the form /storage/<path>.)
+4. RUN THE INSTALLER
+   Open:  https://yourdomain.com/installer/install.php
+   - Paste the installation key from installer/INSTALL-KEY.txt.
+   - System requirements are checked (PHP version, extensions, files,
+     permissions). Fix anything red and re-run the checks.
+   - Enter your domain (https:// required), application name, timezone
+     and the MySQL details from step 1.
+   - The installer validates the database connection and REFUSES to run
+     if the database already contains tables (your existing data is never
+     touched).
+   - Click "Run installation": the installer generates .env OUTSIDE the
+     webroot with a fresh APP_KEY and scheduler secret, runs migrations
+     and seeding through the Laravel framework API (no shell commands),
+     sets up public storage (symlink when allowed, copy otherwise) and
+     verifies the installation.
+   - The installer then locks itself: it creates
+     stunningtouch-app/.installed, deletes the installation key and
+     disables install.php permanently.
 
-7. Verify (browse):
-   - https://yourdomain/                (homepage)
-   - https://yourdomain/image-compressor (a tool page)
-   - https://yourdomain/admin/login     (sign in; CHANGE the seeded
-        admin@stunningtouch.com / ChangeMe123! password immediately)
-   - https://yourdomain/sitemap.xml
-   - https://yourdomain/robots.txt
-   - https://yourdomain/.env            (MUST be 403/404, never content)
+5. VERIFY THE SITE
+   - https://yourdomain.com/              (homepage)
+   - https://yourdomain.com/image-compressor (a tool page)
+   - https://yourdomain.com/admin/login   (admin panel)
+   - https://yourdomain.com/.env          (MUST be 403/404, never content)
+   - https://yourdomain.com/vendor/...    (MUST be 403/404)
 
-8. Cron (cPanel -> Cron Jobs), once per minute:
-   * * * * * cd /home/USERNAME/stunningtouch-app && php artisan schedule:run >> /dev/null 2>&1
-   If CLI cron is unavailable, use the web endpoint:
-   * * * * * wget -q -O /dev/null "https://yourdomain/run-scheduler/YOUR_SECRET"
-   (see .docs/CRON_SETUP.md)
+6. CHANGE THE DEFAULT ADMIN PASSWORD IMMEDIATELY
+   Sign in as admin@stunningtouch.com / ChangeMe123!
+   -> My Account -> Change Password.
+   All other sessions are signed out automatically.
 
-9. Optional performance: if you can run PHP once (cron or terminal),
-   run: cd stunningtouch-app && php artisan optimize
-   (Caches config/routes/views into bootstrap/cache.)
+7. CONFIGURE AI PROVIDERS
+   Admin -> AI Provider: enter your provider endpoint + API key, use
+   "Fetch Available Models", pick a model, Test Connection, save.
+   Credentials are stored encrypted in the database — never in .env.
 
-LAYOUT 2 (host forces app inside public_html)
----------------------------------------------
-1. Extract the WHOLE package inside public_html instead, so you get:
-      /home/USERNAME/public_html/stunningtouch-app/
-      /home/USERNAME/public_html/public_html/   -> move its contents up one level
-                                                    into /home/USERNAME/public_html/
-2. Copy LAYOUT2-root-public-htaccess.txt to /home/USERNAME/public_html/.htaccess
-3. Verify https://yourdomain/.env and https://yourdomain/stunningtouch-app/.env
-   both return 403/404.
+8. cPanel CRON JOB (scheduler)
+   cPanel -> Cron Jobs -> add, once per minute:
+
+   Web-cron (works on all hosts; replace YOUR_SCHEDULER_SECRET with the
+   value generated in stunningtouch-app/.env):
+     * * * * * /usr/bin/curl -s -m 55 "https://yourdomain.com/run-scheduler/YOUR_SCHEDULER_SECRET" > /dev/null 2>&1
+
+   If your host offers a PHP CLI (some do via "Terminal" or custom cron
+   with the full PHP path), the CLI option is equivalent:
+     * * * * * /usr/local/bin/php /home/USERNAME/stunningtouch-app/artisan schedule:run >> /dev/null 2>&1
+
+9. CLEANUP (only if the installer could not do it itself)
+   The installer removes installer/INSTALL-KEY.txt and disables
+   installer/install.php automatically. If your host blocked the self-
+   cleanup, delete public_html/installer/ manually via File Manager.
+
+10. OPTIONAL PERFORMANCE
+    If you can run PHP once (cron or cPanel "Terminal"), run:
+      cd /home/USERNAME/stunningtouch-app && php artisan optimize
+
+LAYOUT 2 — host forces the app inside public_html
+-------------------------------------------------
+Only if you cannot upload outside public_html:
+1. Extract the ZIP inside public_html. You get:
+     public_html/stunningtouch-app/
+     public_html/public_html/       -> move its contents up one level into
+                                       public_html/ (and delete the folder)
+     public_html/installer/
+2. Copy LAYOUT2-root-public-htaccess.txt to public_html/.htaccess
+   (it hard-blocks stunningtouch-app internals and routes all requests
+   through stunningtouch-app/public/).
+3. The installer auto-detects the app path; verify the detected path in
+   the requirements step.
+4. After installation, verify https://yourdomain.com/.env and
+   https://yourdomain.com/stunningtouch-app/.env both return 403/404.
+
+TROUBLESHOOTING
+---------------
+- "Permission denied" on storage or bootstrap/cache:
+  File Manager -> Permissions, set the folder (recursive) to 755 and make
+  sure the cPanel user owns it.
+
+- Database connection failed:
+  Check the exact DB name/user (cPanel prefixes them with the account
+  name), the password, and that the user has ALL PRIVILEGES on the DB.
+
+- Missing PHP extension:
+  cPanel -> MultiPHP Manager / Select PHP Version -> enable the extension.
+
+- Storage symlink blocked:
+  The installer falls back to copying storage/app/public into
+  public_html/storage. After future media uploads, copy again — or ask
+  your host to enable the symlink.
+
+- HTTP 500 / blank page:
+  Check stunningtouch-app/storage/logs/laravel.log and the last lines of
+  storage/logs/installer.log. Common cause: wrong DB credentials after
+  editing .env manually (run php artisan config:clear once via cron), or
+  PHP version below 8.3.
+
+- Missing Vite assets (unstyled pages):
+  public_html/build must exist; it is part of the package. If it is
+  missing, re-extract the ZIP.
+
+- Installer already locked:
+  stunningtouch-app/.installed exists — the app is installed. If you
+  really need to reinstall, delete .installed AND use a fresh empty
+  database; never reuse the existing one.
+
+- The installer key is missing/wrong:
+  The key file ships inside the ZIP (installer/INSTALL-KEY.txt) and a
+  copy was saved locally as deploy/INSTALL-KEY.local.txt at build time.
 ================================================================

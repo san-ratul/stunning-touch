@@ -294,13 +294,27 @@ The suite covers admin authentication and password management, AI provider integ
 
 ## Production Deployment (shared hosting)
 
-The included `deploy/` folder documents a cPanel-style deployment:
+The included `deploy/` folder provides a complete one-ZIP cPanel workflow with a browser-based installer — **no SSH, Composer, or Node.js needed on the server**:
 
-1. **Build locally** (your dev machine has Node.js): `npm run build` → the compiled `public/build` assets are part of the deployment package. Production hosting does not need Node.js.
-2. **Package** — `deploy/build-deploy-package.ps1` builds the release zip (source + built assets, no `vendor/`).
-3. **Upload & install** — follow `deploy/INSTALL.txt`: upload the zip, extract, copy `.env` (see `deploy/.env.production.template`), point the webroot, run `php artisan migrate --force` via cPanel's terminal or the web-cron.
-4. The web-cron entry (above) drives the daily scheduler.
-5. No Redis, queue workers or WebSockets are required: sessions, cache and queue use the database connection.
+1. **Build locally** (your dev machine has Node.js):
+
+   ```powershell
+   npm ci
+   npm run build
+   powershell -ExecutionPolicy Bypass -File deploy\build-deploy-package.ps1
+   ```
+
+   This produces `deploy/stunningtouch-deploy.zip` (+ SHA-256 checksum file) containing the full Laravel app **with production `vendor/`**, the compiled frontend assets, and a secure temporary installer.
+
+2. **Upload & extract** the ZIP in the cPanel home directory (see `deploy/INSTALL.txt` for the full checklist and a Layout 2 fallback for hosts that force the app inside `public_html`).
+3. **Run the installer** at `https://yourdomain.com/installer/install.php` — enter the installation key from `installer/INSTALL-KEY.txt`, pass the requirements check, provide your domain and MySQL credentials, and confirm. The installer generates the production `.env` (fresh `APP_KEY` + scheduler secret, stored *outside* the webroot), refuses to touch a non-empty database, runs migrations and seeding through Laravel's Artisan API, sets up public storage, and locks itself permanently.
+4. **No Redis, queue workers or WebSockets required** — sessions, cache and queue use the database connection. The web-cron endpoint drives the scheduler:
+
+   ```cron
+   * * * * * /usr/bin/curl -s -m 55 "https://yourdomain.com/run-scheduler/YOUR_SCHEDULER_SECRET" > /dev/null 2>&1
+   ```
+
+5. **Change the default admin password immediately** and configure AI providers (encrypted, in-database) in the admin panel.
 
 ## Database & Seeders
 
@@ -341,7 +355,7 @@ resources/
   views/admin/, views/public/, views/tools/
 routes/web.php             Public + admin + protected scheduler routes
 tests/                     Feature & unit suites (322 tests)
-deploy/                    Shared-hosting deployment scripts & templates
+deploy/                    Shared-hosting deployment: ZIP builder, installer source, templates
 docs/screenshots/          README screenshots (real application)
 ```
 
