@@ -10,9 +10,10 @@ use Illuminate\Http\Request;
 class VisitorLocaleController extends Controller
 {
     /**
-     * Records the visitor's approximate country (derived from the browser
-     * locale, e.g. "en-US" -> "US") once per session. Used ONLY when no
-     * authoritative edge geo header exists. No raw data is stored.
+     * Records the visitor's approximate country (derived client-side from
+     * the browser's IANA timezone, e.g. Asia/Dhaka -> BD) once per session.
+     * Used ONLY when no authoritative edge geo header exists. No raw data
+     * is stored.
      */
     public function store(Request $request)
     {

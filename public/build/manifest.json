@@ -22,7 +22,7 @@
     ]
   },
   "resources/js/app.js": {
-    "file": "assets/app-4GXTIFjB.js",
+    "file": "assets/app-DjfGAUH4.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
@@ -68,7 +68,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/image-compressor.js": {
-    "file": "assets/image-compressor-1VZM88XR.js",
+    "file": "assets/image-compressor-Cknro3Rm.js",
     "name": "image-compressor",
     "src": "resources/js/tools/image-compressor.js",
     "isDynamicEntry": true,
@@ -79,7 +79,7 @@
     ]
   },
   "resources/js/tools/image-resizer.js": {
-    "file": "assets/image-resizer-PS20-QfX.js",
+    "file": "assets/image-resizer-DcUSrBQK.js",
     "name": "image-resizer",
     "src": "resources/js/tools/image-resizer.js",
     "isDynamicEntry": true,
@@ -90,7 +90,7 @@
     ]
   },
   "resources/js/tools/image-tool.js": {
-    "file": "assets/image-tool-B8n7rB2j.js",
+    "file": "assets/image-tool-DlrVtoUZ.js",
     "name": "image-tool",
     "src": "resources/js/tools/image-tool.js",
     "isDynamicEntry": true,
@@ -100,7 +100,7 @@
     ]
   },
   "resources/js/tools/jpg-to-png.js": {
-    "file": "assets/jpg-to-png-PU7iBIXN.js",
+    "file": "assets/jpg-to-png-Cro_FRQh.js",
     "name": "jpg-to-png",
     "src": "resources/js/tools/jpg-to-png.js",
     "isDynamicEntry": true,
@@ -117,7 +117,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/merge-pdf.js": {
-    "file": "assets/merge-pdf-BDdsaUQH.js",
+    "file": "assets/merge-pdf-DwEkMN9I.js",
     "name": "merge-pdf",
     "src": "resources/js/tools/merge-pdf.js",
     "isDynamicEntry": true,
@@ -130,7 +130,7 @@
     ]
   },
   "resources/js/tools/png-to-webp.js": {
-    "file": "assets/png-to-webp-BPmulm7Z.js",
+    "file": "assets/png-to-webp-CuGdSLcG.js",
     "name": "png-to-webp",
     "src": "resources/js/tools/png-to-webp.js",
     "isDynamicEntry": true,
@@ -150,7 +150,7 @@
     ]
   },
   "resources/js/tools/split-pdf.js": {
-    "file": "assets/split-pdf-txRU3-ZA.js",
+    "file": "assets/split-pdf-CUHQ7FT_.js",
     "name": "split-pdf",
     "src": "resources/js/tools/split-pdf.js",
     "isDynamicEntry": true,

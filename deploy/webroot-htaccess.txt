@@ -3,24 +3,49 @@
 #
 # - While install.php exists (app not installed yet), everything is routed
 #   to the web installer.
-# - After a successful install the installer deletes itself and the app is
-#   served from public/.
+# - After a successful install the app is served from public/:
+#     * real files that exist under public/ are passed through directly
+#       (compiled assets, favicon, robots.txt, media storage),
+#     * everything else goes to Laravel's front controller.
+#   Mapping "/" to the public/ DIRECTORY would make Apache re-run these
+#   rules for /public/... and end in a rewrite-loop 500 — so this file
+#   always targets real files or the front controller, never the directory.
 # - Dotfiles (.env, .install-key, ...) are never served.
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
 
-    # Not installed yet: send everything to the web installer
+    # ------------------------------------------------------------------
+    # Installer phase: while install.php exists, route everything to it.
+    # ------------------------------------------------------------------
     RewriteCond %{DOCUMENT_ROOT}/install.php -f
     RewriteCond %{REQUEST_URI} !install\.php
     RewriteRule ^ install.php [L]
 
-    # Serve the application from public/
-    RewriteCond %{REQUEST_URI} !install\.php
+    # ------------------------------------------------------------------
+    # Requests already inside public/ are left alone (they are handled by
+    # public/.htaccess, the standard Laravel front-controller rules).
+    # ------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} ^/public/
+    RewriteRule ^ - [L]
+
+    # ------------------------------------------------------------------
+    # Real files that exist under public/ are served from there
+    # (compiled Vite assets, favicon.ico, robots.txt, public/storage media).
+    # ------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
     RewriteRule ^(.*)$ public/$1 [L]
+
+    # ------------------------------------------------------------------
+    # Everything else is a Laravel route: send it to the front controller.
+    # The webroot index.php delegates to public/index.php.
+    # ------------------------------------------------------------------
+    RewriteCond %{REQUEST_URI} !^/public/
+    RewriteRule ^ index.php [L]
 </IfModule>
 
-# Never serve sensitive files (only matters if mod_rewrite is unavailable)
+# Never serve sensitive files (also applies when mod_rewrite is unavailable)
 <FilesMatch "^\.">
     <IfModule mod_authz_core.c>
         Require all denied

@@ -65,8 +65,8 @@
             <h2 class="font-bold text-slate-900">Countries</h2>
             @if($countries->isEmpty())
                 <p class="mt-8 text-sm text-slate-500">
-                    No country data yet. Countries come from edge geo headers (e.g. Cloudflare
-                    CF-IPCountry) or an approximate browser-locale hint.
+                            No country data yet. Countries come from edge geo headers (e.g. Cloudflare
+                            CF-IPCountry) or an approximate browser-timezone hint.
                 </p>
             @else
                 <div class="mt-4 h-56"><canvas id="countryChart" aria-label="Visitors by country chart" role="img"></canvas></div>
