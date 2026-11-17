@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="monetag" content="95027b915dbd4431406d90a0a098ec34">
 
     <script>(function(){try{var q=new URLSearchParams(location.search).get('theme');var t=(q==='dark'||q==='light'||q==='system')?q:(localStorage.getItem('st-theme')||'system');var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);var el=document.documentElement;el.classList.toggle('dark',d);el.dataset.theme=t;}catch(e){}})();</script>
 
