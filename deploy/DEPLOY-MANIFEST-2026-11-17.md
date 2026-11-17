@@ -63,3 +63,10 @@ README.md
 - The global advertisement starts **disabled** (`advertisement_enabled` defaults to `'0'`). After deployment, open Admin → Advertisement, paste the Monetag snippet and set status to Enabled.
 - The Monetag verification meta tag in the public layout is unchanged and unrelated to this feature.
 - If the previous per-placement ad system had live rows in production, they remain in the database untouched but are no longer rendered. The audit confirmed the local database had zero advertisement rows before this change.
+
+## Patch — analytics 500 fix (commit b23da29)
+
+- **Package:** deploy/stunningtouch-update-analytics-fix.zip (single file)
+- **SHA-256:** 0f3527cfffee2e9b80f50c234398c5465162cc0e2eb5862b74a4597fb9b75573
+- Changed file: app/Http/Controllers/Admin/AnalyticsController.php (double-quoted SQL literals replaced with single quotes — safe under all MySQL/MariaDB sql_mode settings)
+
