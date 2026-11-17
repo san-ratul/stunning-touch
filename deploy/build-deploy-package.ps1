@@ -82,19 +82,17 @@ if (Test-Path $zip)  { Remove-Item $zip -Force }
 if (Test-Path $zipSha) { Remove-Item $zipSha -Force }
 New-Item -ItemType Directory -Path $pkg | Out-Null
 
-$appDir  = Join-Path $pkg "stunningtouch-app"
-$htmlDir = Join-Path $pkg "public_html"
-$insDir  = Join-Path $htmlDir "installer"   # temporary web-accessible installer
-New-Item -ItemType Directory -Path $appDir, $htmlDir, $insDir | Out-Null
+$appDir = $pkg   # proven single-root layout: the whole app is the package root,
+                 # extracted directly into the document root (movie-site model)
+$pubDir = Join-Path $appDir "public"
 
 # ---------------------------------------------------------------------------
-# 4. Application files (Laravel source lives OUTSIDE the webroot)
+# 4. Application files (extracted directly into the document root)
 # ---------------------------------------------------------------------------
 Write-Host "-> copying application files" -ForegroundColor Gray
 
 # Robocopy: fast recursive copy with explicit exclusions.
 $excludeDirs = @('.git', 'node_modules', 'tests', '.docs', 'docs', 'deploy')
-$excludeFiles = @('.env', '.env.backup', '.env.production', 'database.sqlite', 'composer.phar', '.phpunit.result.cache')
 $dirs = @('app', 'bootstrap', 'config', 'database', 'lang', 'public', 'resources', 'routes', 'vendor')
 foreach ($d in $dirs) {
     if (Test-Path (Join-Path $root $d)) {
@@ -103,10 +101,9 @@ foreach ($d in $dirs) {
         Check ($LASTEXITCODE -lt 8) "robocopy failed for directory $d (exit $LASTEXITCODE)."
     }
 }
-foreach ($f in @('artisan', 'composer.json', 'composer.lock')) {
+foreach ($f in @('artisan', 'composer.json', 'composer.lock', '.env.example')) {
     Copy-Item (Join-Path $root $f) (Join-Path $appDir $f) -Force
 }
-Copy-Item (Join-Path $PSScriptRoot '.env.production.template') (Join-Path $appDir '.env.production.template') -Force
 
 # Remove files that must never ship, even if they slipped into copied dirs.
 $remove = @(
@@ -120,12 +117,6 @@ foreach ($f in $remove) {
 # Storage: ship a clean skeleton with placeholders only (no local logs,
 # sessions, caches, or generated media).
 if (Test-Path (Join-Path $appDir 'storage')) { Remove-Item (Join-Path $appDir 'storage') -Recurse -Force }
-New-Item -ItemType Directory -Force -Path `
-    (Join-Path $appDir 'storage\app\public\media\covers'), `
-    (Join-Path $appDir 'storage\framework\cache\data'), `
-    (Join-Path $appDir 'storage\framework\sessions'), `
-    (Join-Path $appDir 'storage\framework\views'), `
-    (Join-Path $appDir 'storage\logs') | Out-Null
 foreach ($d in @('storage', 'storage\app', 'storage\app\public', 'storage\app\public\media', 'storage\app\public\media\covers', 'storage\framework', 'storage\framework\cache', 'storage\framework\cache\data', 'storage\framework\sessions', 'storage\framework\views', 'storage\logs', 'bootstrap\cache')) {
     $dir = Join-Path $appDir $d
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -134,79 +125,60 @@ foreach ($d in @('storage', 'storage\app', 'storage\app\public', 'storage\app\pu
 Set-Content -LiteralPath (Join-Path $appDir 'bootstrap\cache\.gitignore') -Value "*`n!.gitignore`n" -NoNewline:$false
 
 # ---------------------------------------------------------------------------
-# 5. public_html (document root)
+# 5. Webroot front controller, router .htaccess and installer
 # ---------------------------------------------------------------------------
-Write-Host "-> preparing public_html" -ForegroundColor Gray
+Write-Host "-> preparing webroot entry point and installer" -ForegroundColor Gray
 
-Copy-Item (Join-Path $appDir 'public\*') $htmlDir -Recurse -Force
-# NOTE: the app copy keeps its own public/build — Laravel resolves the Vite
-# manifest via public_path() (stunningtouch-app/public), while the document
-# root serves the actual /build asset URLs.
+# index.php: redirects visitors to the installer until .env exists, then
+# delegates to public/index.php. .htaccess: routes everything through
+# public/ and hard-blocks dotfiles (.env, .install-key, ...).
+Copy-Item (Join-Path $PSScriptRoot 'webroot-index.php') (Join-Path $appDir 'index.php') -Force
+Copy-Item (Join-Path $PSScriptRoot 'webroot-htaccess.txt') (Join-Path $appDir '.htaccess') -Force
 
-$indexPhp = @'
-<?php
+# Single-file installer at the webroot (proven pattern).
+Copy-Item (Join-Path $PSScriptRoot 'installer-src\install.php') (Join-Path $appDir 'install.php') -Force
 
-use Illuminate\Http\Request;
-
-define('LARAVEL_START', microtime(true));
-
-// Layout 1: the Laravel application lives OUTSIDE the document root,
-// in /home/USERNAME/stunningtouch-app. Only this index.php, .htaccess,
-// compiled assets and the temporary installer are exposed.
-require __DIR__.'/../stunningtouch-app/vendor/autoload.php';
-
-$app = require __DIR__.'/../stunningtouch-app/bootstrap/app.php';
-
-$app->handleRequest(Request::capture());
-'@
-Set-Content -LiteralPath (Join-Path $htmlDir 'index.php') -Value $indexPhp -Encoding ASCII
-
-Copy-Item (Join-Path $root 'public\.htaccess') (Join-Path $htmlDir '.htaccess') -Force
-
-# ---------------------------------------------------------------------------
-# 6. Secure installer + authorization key
-# ---------------------------------------------------------------------------
-Write-Host "-> preparing installer" -ForegroundColor Gray
-
-Copy-Item (Join-Path $PSScriptRoot 'installer-src\install.php') (Join-Path $insDir 'install.php') -Force
-
-# Cryptographically secure installation key — 64 hex chars from 32 random bytes.
+# Cryptographically secure installation key — 64 hex chars from 32 random
+# bytes, shipped as a dotfile (blocked from the web by the root .htaccess).
 $tokenBytes = New-Object byte[] 32
 $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
 $rng.GetBytes($tokenBytes)
 $rng.Dispose()
 $installKey = [BitConverter]::ToString($tokenBytes).Replace('-', '').ToLowerInvariant()
-Set-Content -LiteralPath (Join-Path $insDir 'INSTALL-KEY.txt') -Value $installKey -NoNewline:$false
-Set-Content -LiteralPath $keyLocal -Value "INSTALLER KEY (keep private, give to the installer operator):`r`n$installKey`r`n" 
+Set-Content -LiteralPath (Join-Path $appDir '.install-key') -Value $installKey -NoNewline:$false
+Set-Content -LiteralPath $keyLocal -Value "INSTALLER KEY (keep private, give to the installer operator):`r`n$installKey`r`n"
 
 # ---------------------------------------------------------------------------
-# 7. Guides
+# 6. Guide
 # ---------------------------------------------------------------------------
-Copy-Item (Join-Path $PSScriptRoot 'INSTALL.txt') (Join-Path $pkg 'INSTALL.txt') -Force
-Copy-Item (Join-Path $PSScriptRoot 'root-public-htaccess.txt') (Join-Path $pkg 'LAYOUT2-root-public-htaccess.txt') -Force
+Copy-Item (Join-Path $PSScriptRoot 'INSTALL.txt') (Join-Path $appDir 'INSTALL.txt') -Force
 
 # ---------------------------------------------------------------------------
-# 8. Package integrity verification
+# 7. Package integrity verification
 # ---------------------------------------------------------------------------
 Write-Host "-> verifying package" -ForegroundColor Gray
 
 Check (Test-Path (Join-Path $appDir 'vendor\autoload.php')) "Package check failed: vendor/autoload.php missing."
 Check (Test-Path (Join-Path $appDir 'artisan')) "Package check failed: artisan missing."
 Check (Test-Path (Join-Path $appDir 'bootstrap\app.php')) "Package check failed: bootstrap/app.php missing."
-Check (Test-Path (Join-Path $htmlDir 'build\manifest.json')) "Package check failed: public_html/build/manifest.json missing."
-Check (Test-Path (Join-Path $insDir 'install.php')) "Package check failed: installer/install.php missing."
-Check (Test-Path (Join-Path $insDir 'INSTALL-KEY.txt')) "Package check failed: installer key missing."
+Check (Test-Path (Join-Path $pubDir 'build\manifest.json')) "Package check failed: public/build/manifest.json missing."
+Check (Test-Path (Join-Path $appDir 'install.php')) "Package check failed: install.php missing."
+Check (Test-Path (Join-Path $appDir '.install-key')) "Package check failed: installer key missing."
+Check (Test-Path (Join-Path $appDir '.env.example')) "Package check failed: .env.example missing."
+Check (Test-Path (Join-Path $appDir 'index.php')) "Package check failed: webroot index.php missing."
+Check (Test-Path (Join-Path $appDir '.htaccess')) "Package check failed: webroot .htaccess missing."
 Check (-not (Test-Path (Join-Path $appDir '.env'))) "Package check failed: .env must never be packaged."
 
-# Environment template must contain placeholders only.
-$template = Get-Content (Join-Path $appDir '.env.production.template') -Raw
-Check ($template -notmatch '(?m)^(DB_PASSWORD|APP_KEY|SCHEDULER_SECRET)=[^\sC][^\r\n]*$') ".env.production.template contains a non-placeholder value — refusing to package."
+# .env.example must contain placeholders only.
+$example = Get-Content (Join-Path $appDir '.env.example') -Raw
+Check ($example -notmatch '(?m)^APP_KEY=\S') ".env.example contains a real APP_KEY — refusing to package."
+Check ($example -match 'SCHEDULER_SECRET=CHANGE_ME') ".env.example is missing the SCHEDULER_SECRET placeholder."
 
 # Scan the staged tree for forbidden files (placeholders .gitignore and
 # .env.production.template are intentional).
 $forbidden = Get-ChildItem $pkg -Recurse -Force -File | Where-Object {
     ($_.Name -eq '.env') -or
-    ($_.Name -like '.env.*' -and $_.Name -ne '.env.production.template') -or
+    ($_.Name -like '.env.*' -and $_.Name -notin '.env.example', '.env.production.template') -or
     ($_.Extension -in '.zip', '.sqlite', '.log', '.bak', '.pem', '.key') -or
     ($_.Name -eq 'Thumbs.db')
 }
@@ -268,7 +240,7 @@ $zipEntries = [System.IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $badEntries = $zipEntries.Entries | Where-Object {
         ($_.FullName -match '(^|[\\/])\.env$') -or
-        ($_.FullName -match '\.env\.' -and $_.FullName -notmatch '\.env\.production\.template$') -or
+        ($_.FullName -match '\.env\.' -and $_.FullName -notmatch '\.env\.(example|production\.template)$') -or
         ($_.FullName -match '\.(sqlite|log|pem|key)$')
     }
     Check (-not $badEntries) ("ZIP contains forbidden entries: " + (($badEntries | ForEach-Object { $_.FullName }) -join ', '))
@@ -289,5 +261,5 @@ Write-Host "Done." -ForegroundColor Green
 Write-Host "  ZIP:      $zip ($size MB)"
 Write-Host "  SHA-256:  $hash"
 Write-Host "  Installer key: $keyLocal (KEEP PRIVATE — never commit or email)"
-Write-Host "  Upload the ZIP via cPanel File Manager, extract in /home/USERNAME/, open"
+Write-Host "  Upload the ZIP into public_html via cPanel File Manager, extract THERE (overwrite), open"
 Write-Host "  https://yourdomain.com/installer/install.php and follow INSTALL.txt."

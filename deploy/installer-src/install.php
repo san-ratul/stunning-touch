@@ -1,919 +1,411 @@
 <?php
 
-/*
- * Stunning Touch — cPanel shared-hosting installer (temporary entry point).
+/**
+ * Stunning Touch — web installer for cPanel shared hosting (no SSH,
+ * no Composer, no Node.js on the server).
  *
- * Purpose: guide an administrator through a fresh production installation
- * without SSH, Composer or Node.js on the server.
+ * Deployment model (proven in production on this host):
+ * the complete application (including vendor/) is extracted directly into
+ * the document root. This file sits at the document root next to index.php:
  *
- * Security model:
- * - Requires a cryptographically secure INSTALL-KEY (deploy/installer/INSTALL-KEY.txt,
- *   generated locally by deploy/build-deploy-package.ps1), compared in
- *   constant time; failed attempts are rate-limited.
- * - All state-changing requests are POST with a session CSRF token.
- * - Credentials are sent by POST only (never in URLs), never echoed back,
- *   and never written to logs.
- * - The database is checked for existing tables first: a non-empty database
- *   blocks installation (no destructive commands are ever run).
- * - On completion a permanent lock file is created OUTSIDE the webroot, the
- *   key file is deleted and this script is disabled in place.
+ * - While .env does not exist, index.php/.htaccess route every request here.
+ * - The installer writes .env from .env.example (file-based sessions/cache
+ *   so the app boots safely before tables exist), runs migrations + seeding
+ *   through Laravel's Artisan API, creates the administrator account chosen
+ *   in the form, and then deletes itself and locks permanently.
  *
- * This file must be deleted after installation if the host prevents
- * self-disabling.
+ * Security:
+ * - Authorization key required (constant-time compare, rate limited). The
+ *   key ships as the dotfile .install-key (blocked from the web by
+ *   .htaccess) and is deleted on completion.
+ * - All state-changing requests are POST with a CSRF token.
+ * - Credentials are never echoed or logged; no stack traces are shown.
+ * - A previous failed attempt's Laravel-managed tables are reset only when
+ *   the "migrations" bookkeeping table exists; foreign data hard-stops the
+ *   installer.
  */
 
 declare(strict_types=1);
+use App\Models\BlogPost;
+use App\Models\User;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 
-error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
+error_reporting(E_ALL);
+@set_time_limit(300);
+
+const INSTALLER_VERSION = '2.0';
 
 session_start();
 
-const INSTALLER_VERSION = '1.0';
+$marker = __DIR__.'/storage/app/installed';
+$keyFile = __DIR__.'/.install-key';
+$attemptsFile = __DIR__.'/.install-attempts';
+$appDir = __DIR__; // the application IS the document root in this layout
+$htmlDir = __DIR__;
 
-/* --------------------------------------------------------------------------
- * Paths
- * ------------------------------------------------------------------------ */
+header('Content-Type: text/html; charset=utf-8');
+header('X-Robots-Tag: noindex');
 
-$installerDir = __DIR__;
-$htmlDir = dirname($installerDir);          // public_html (document root)
-$keyFile = $installerDir.'/INSTALL-KEY.txt';
-$attemptsFile = $installerDir.'.attempts.json';
+/* ------------------------------------------------------------------ utils */
 
-/* --------------------------------------------------------------------------
- * Small helpers (no external dependencies)
- * ------------------------------------------------------------------------ */
+$esc = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES, 'UTF-8');
 
-function e(?string $value): string
+function installer_log(string $message): void
 {
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
-}
-
-function installer_log(string $appDir, string $message): void
-{
-    $dir = $appDir.'/storage/logs';
+    $dir = __DIR__.'/storage/logs';
     if (! is_dir($dir)) {
-        @mkdir($dir, 0755, true);
+        @mkdir($dir, 0775, true);
     }
-    if (is_dir($dir) && is_writable($dir)) {
+    if (is_dir($dir)) {
         @file_put_contents($dir.'/installer.log', '['.date('Y-m-d H:i:s').'] '.$message.PHP_EOL, FILE_APPEND);
     }
 }
 
-function installer_log_safe(string $appDir, string $message): void
-{
-    if (is_string($appDir) && is_dir($appDir)) {
-        installer_log($appDir, $message);
-
-        return;
-    }
-    // App dir not known yet — keep a local attempt record instead.
-    installer_note($message);
-}
-
-function installer_note(string $message): void
-{
-    $dir = __DIR__;
-    if (is_writable($dir)) {
-        @file_put_contents($dir.'/.installer-events.log', '['.date('Y-m-d H:i:s').'] '.$message.PHP_EOL, FILE_APPEND);
-    }
-}
-
-function redirect(string $step, ?string $notice = null, bool $error = false): never
-{
-    if ($notice !== null) {
-        $_SESSION['notice'] = ['message' => $notice, 'error' => $error];
-    }
-    header('Location: ?step='.$step);
-    exit;
-}
-
-function csrf_field(): string
+function csrf_token(): string
 {
     if (empty($_SESSION['csrf'])) {
         $_SESSION['csrf'] = bin2hex(random_bytes(32));
     }
 
-    return '<input type="hidden" name="_csrf" value="'.e($_SESSION['csrf']).'">';
+    return $_SESSION['csrf'];
 }
 
-function verify_csrf(): void
+function redirect(string $to): never
 {
-    $token = (string) ($_POST['_csrf'] ?? '');
-    if (! hash_equals((string) ($_SESSION['csrf'] ?? ''), $token)) {
-        http_response_code(419);
-        echo installer_shell('Session expired', '<p class="error">Your session expired. Please <a href="?step=token">start again</a>.</p>');
-        exit;
-    }
-}
-
-function rate_limit_attempts(): void
-{
-    $attempts = [];
-    if (is_file($GLOBALS['attemptsFile'])) {
-        $attempts = json_decode((string) @file_get_contents($GLOBALS['attemptsFile']), true) ?: [];
-    }
-
-    $now = time();
-    $recent = array_values(array_filter($attempts, fn ($t) => ($now - (int) $t) < 900));
-
-    if (count($recent) >= 10) {
-        http_response_code(429);
-        echo installer_shell('Too many attempts', '<p class="error">Too many failed authorization attempts. Wait 15 minutes and try again.</p>');
-        exit;
-    }
-
-    $recent[] = $now;
-    @file_put_contents($GLOBALS['attemptsFile'], json_encode($recent));
-}
-
-/* --------------------------------------------------------------------------
- * Layout shell
- * ------------------------------------------------------------------------ */
-
-function installer_shell(string $title, string $content, ?array $progress = null): string
-{
-    $steps = ['Token', 'Requirements', 'Configuration', 'Database', 'Install', 'Finish'];
-    $current = is_array($progress) ? ($progress['current'] ?? 0) : 0;
-    $stepsHtml = '';
-    foreach ($steps as $i => $label) {
-        $state = $i < $current ? 'done' : ($i === $current ? 'current' : '');
-        $stepsHtml .= '<li class="'.$state.'">'.e($label).'</li>';
-    }
-
-    $notice = '';
-    if (! empty($_SESSION['notice'])) {
-        $n = $_SESSION['notice'];
-        $notice = '<div class="alert '.($n['error'] ? 'alert-error' : 'alert-ok').'">'.e($n['message']).'</div>';
-        unset($_SESSION['notice']);
-    }
-
-    return '<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex,nofollow">
-<title>'.e($title).' — Stunning Touch Installer</title>
-<style>
-:root{--bg:#0b1120;--card:#111c31;--line:#263551;--text:#e2e8f0;--muted:#96a5c0;--brand:#8b5cf6;--brand2:#a855f7;--ok:#34d399;--err:#f87171}
-*{box-sizing:border-box}
-body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#1e1b4b 0%,var(--bg) 55%);color:var(--text);min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px}
-.wrap{width:100%;max-width:760px}
-header{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px}
-h1{font-size:20px;margin:0}
-header p{margin:2px 0 0;font-size:12px;color:var(--muted)}
-ol.steps{display:flex;gap:6px;list-style:none;padding:0;margin:0 0 18px;flex-wrap:wrap}
-ol.steps li{font-size:11px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-ol.steps li.current{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border-color:transparent;font-weight:700}
-ol.steps li.done{border-color:var(--ok);color:var(--ok)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px}
-h2{margin:0 0 6px;font-size:17px}
-p.lead{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.5}
-label{display:block;font-size:12px;font-weight:600;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
-input,select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0b1424;color:var(--text);font-size:14px}
-input:focus,select:focus{outline:2px solid var(--brand);outline-offset:1px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
-@media(max-width:560px){.grid2{grid-template-columns:1fr}}
-button{margin-top:20px;background:linear-gradient(135deg,var(--brand),var(--brand2));border:0;color:#fff;font-weight:700;font-size:14px;padding:12px 22px;border-radius:10px;cursor:pointer}
-button:hover{filter:brightness(1.1)}
-a{color:#c4b5fd}
-table{width:100%;border-collapse:collapse;font-size:13px}
-td,th{padding:8px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-.ok{color:var(--ok);font-weight:700}
-.bad{color:var(--err);font-weight:700}
-.alert{padding:12px 14px;border-radius:10px;font-size:13px;margin-bottom:16px}
-.alert-ok{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.4);color:var(--ok)}
-.alert-error{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.4);color:var(--err)}
-pre{background:#0b1424;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word}
-code{background:#0b1424;padding:1px 5px;border-radius:5px;font-size:12px}
-ul{padding-left:20px;color:var(--muted);font-size:13px;line-height:1.7}
-.note{font-size:12px;color:var(--muted);margin-top:10px}
-</style></head><body><div class="wrap">
-<header><div class="logo">S</div><div><h1>Stunning Touch Installer</h1><p>cPanel shared hosting · no SSH required · v'.INSTALLER_VERSION.'</p></div></header>
-<ol class="steps">'.$stepsHtml.'</ol>
-<div class="card">'.$notice.$content.'</div>
-</div></body></html>';
-}
-
-/* --------------------------------------------------------------------------
- * Step: token gate
- * ------------------------------------------------------------------------ */
-
-function handle_token(): void
-{
-    global $keyFile, $installerDir;
-
-    if (! is_file($keyFile)) {
-        // No key file: either cleanup already ran (installed) or the package
-        // is broken. Check for the permanent lock through likely app dirs.
-        foreach (app_dir_candidates() as $dir) {
-            if (is_file($dir.'/.installed')) {
-                echo installer_shell('Installer locked', '<p class="error">This installer has already been completed and is permanently locked. Remove the installer directory if it is still present.</p>', ['current' => 5]);
-                exit;
-            }
-        }
-        echo installer_shell('Installer key missing', '<p class="error">INSTALL-KEY.txt is missing from the installer directory. Re-extract the deployment package or remove the installer.</p>', ['current' => 0]);
-        exit;
-    }
-
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-        verify_csrf();
-        rate_limit_attempts();
-
-        $provided = trim((string) ($_POST['install_key'] ?? ''));
-        $expected = trim((string) @file_get_contents($keyFile));
-
-        if ($provided === '' || ! hash_equals($expected, $provided)) {
-            installer_note('Failed installer authorization attempt');
-
-            redirect('token', 'Invalid installation key. Check the INSTALL-KEY file from your downloaded package.', true);
-        }
-
-        // Authorized: clear attempt history for this session.
-        @unlink($GLOBALS['attemptsFile']);
-        $_SESSION['authorized'] = true;
-
-        redirect('requirements');
-    }
-
-    echo installer_shell('Authorization', '
-        <h2>Installation authorization</h2>
-        <p class="lead">Enter the installation key from <code>INSTALL-KEY.txt</code> (inside the <code>installer/</code> folder you extracted from the deployment ZIP). This protects the installer from unauthorized use.</p>
-        <form method="post" action="?step=token">'.csrf_field().'
-            <label for="install_key">Installation key</label>
-            <input id="install_key" name="install_key" type="password" autocomplete="off" required autofocus>
-            <button type="submit">Authorize installer</button>
-        </form>', ['current' => 0]);
-}
-
-/* --------------------------------------------------------------------------
- * Application directory resolution
- * ------------------------------------------------------------------------ */
-
-function app_dir_candidates(): array
-{
-    $candidates = [];
-    $html = dirname(__DIR__); // public_html
-    $home = dirname($html);   // /home/USERNAME
-
-    // Layout 1 (preferred): app folder is a sibling of public_html.
-    $candidates[] = $home.'/stunningtouch-app';
-    // Layout 2: app inside the document root.
-    $candidates[] = $html.'/stunningtouch-app';
-
-    return $candidates;
-}
-
-function detect_app_dir(): string
-{
-    foreach (app_dir_candidates() as $dir) {
-        if (is_file($dir.'/bootstrap/app.php') && is_file($dir.'/artisan')) {
-            return $dir;
-        }
-    }
-
-    return '';
-}
-
-/* --------------------------------------------------------------------------
- * Step: requirements
- * ------------------------------------------------------------------------ */
-
-function handle_requirements(): void
-{
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-        verify_csrf();
-        redirect('config');
-    }
-
-    $appDir = detect_app_dir();
-    $checks = [];
-    $allOk = true;
-
-    $add = function (string $name, bool $ok, string $fix) use (&$checks, &$allOk) {
-        $checks[] = [$name, $ok, $fix];
-        if (! $ok) {
-            $allOk = false;
-        }
-    };
-
-    $requiredExtensions = ['pdo', 'pdo_mysql', 'mbstring', 'openssl', 'ctype', 'json', 'fileinfo', 'tokenizer', 'curl', 'filter', 'hash'];
-    $loaded = get_loaded_extensions();
-    $loaded = array_map('strtolower', $loaded);
-
-    $add('PHP version ≥ 8.3 (found '.PHP_VERSION.')', version_compare(PHP_VERSION, '8.3.0', '>='), 'Use PHP 8.3 or newer (cPanel → MultiPHP Manager).');
-    foreach ($requiredExtensions as $ext) {
-        $add('PHP extension: '.$ext, in_array($ext, $loaded, true), 'Enable the "'.$ext.'" PHP extension (cPanel → Select PHP Version / MultiPHP INI).');
-    }
-    $add('vendor/autoload.php present', $appDir !== '' && is_file($appDir.'/vendor/autoload.php'), 'Extract the full package so that stunningtouch-app/ (including vendor/) sits next to public_html/.');
-    $add('bootstrap/app.php present', $appDir !== '' && is_file($appDir.'/bootstrap/app.php'), 'Re-extract the deployment package.');
-    $add('Compiled frontend assets (public_html/build/manifest.json)', is_file(dirname(__DIR__).'/build/manifest.json'), 'public_html/build is missing — re-extract the package; it is built at deploy time.');
-    $add('Writable storage/ directory', $appDir !== '' && is_dir($appDir.'/storage') && is_writable($appDir.'/storage'), 'cPanel → File Manager → Permissions: set storage/ (recursive) to 755 and ensure the PHP user owns it.');
-    $add('Writable bootstrap/cache/ directory', $appDir !== '' && is_dir($appDir.'/bootstrap/cache') && is_writable($appDir.'/bootstrap/cache'), 'Set bootstrap/cache (recursive) to 755.');
-    $add('.env does not exist yet (fresh installation)', $appDir !== '' && ! is_file($appDir.'/.env'), 'stunningtouch-app/.env already exists — this application appears to be installed. Remove the installer directory instead of reinstalling.');
-    $add('Application directory resolvable', $appDir !== '', 'The installer could not find stunningtouch-app/ next to public_html/. Use the manual path field in the next step.');
-
-    // Stale / broken previous extraction: the app dir exists but is not a
-    // complete package. Offer the authorized cleanup step.
-    $staleDirs = stale_app_dirs();
-
-    $rows = '';
-    foreach ($checks as [$name, $ok, $fix]) {
-        $rows .= '<tr><td class="'.($ok ? 'ok' : 'bad').'">'.($ok ? '✓' : '✗').'</td><td>'.e($name).'</td><td>'.($ok ? '' : e($fix)).'</td></tr>';
-    }
-
-    $content = '<h2>System requirements</h2><p class="lead">All mandatory checks must pass before installation continues.</p>
-    <table><tr><th style="width:30px"></th><th>Check</th><th>Fix</th></tr>'.$rows.'</table>';
-
-    if ($allOk) {
-        $_SESSION['app_dir'] = $appDir;
-        $content .= '<form method="post" action="?step=requirements">'.csrf_field().'<button type="submit">Continue</button></form>';
-    } else {
-        $content .= '<p class="note">Fix the failed checks, then <a href="?step=requirements">re-run the checks</a>.</p>';
-    }
-
-    if ($staleDirs !== []) {
-        $list = implode(', ', array_map('e', $staleDirs));
-        $content .= '<h2 style="margin-top:22px">Previous extraction detected</h2>
-        <p class="lead">These folders look like leftovers from a previous failed extraction (incomplete application files). You can remove them here — the installer runs as the web-server user, which can often delete files that cPanel File Manager cannot. <strong>They will be permanently deleted.</strong></p>
-        <p><code>'.$list.'</code></p>
-        <form method="post" action="?step=cleanup">'.csrf_field().'<button type="submit">Delete stale folders &amp; re-check</button></form>';
-    }
-
-    echo installer_shell('Requirements', $content, ['current' => 1]);
-}
-
-/* --------------------------------------------------------------------------
- * Step: cleanup of stale / broken previous extractions
- * ------------------------------------------------------------------------ */
-
-function stale_app_dirs(): array
-{
-    // Sentinel files spanning every packaged directory: a complete (or
-    // correctly-installed) application has all of them.
-    $sentinels = [
-        'app/Models/User.php',
-        'app/Providers/AppServiceProvider.php',
-        'app/Services/Ai/AiProviderService.php',
-        'resources/views/welcome.blade.php',
-        'routes/web.php',
-        'config/app.php',
-        'bootstrap/app.php',
-        'vendor/composer/installed.json',
-        'vendor/laravel/framework/src/Illuminate/Support/Str.php',
-    ];
-
-    $stale = [];
-
-    foreach (app_dir_candidates() as $dir) {
-        if (! is_dir($dir)) {
-            continue;
-        }
-
-        $missing = 0;
-        foreach ($sentinels as $file) {
-            if (! is_file($dir.'/'.$file)) {
-                $missing++;
-            }
-        }
-
-        if ($missing > 0) {
-            $stale[] = $dir;
-        }
-    }
-
-    // Nested document root from extracting the ZIP inside public_html
-    // (previous package layout): only when it clearly contains our content.
-    $nested = dirname(__DIR__).'/public_html';
-    if (is_file($nested.'/build/manifest.json') && is_file($nested.'/index.php')) {
-        $stale[] = $nested;
-    }
-
-    return $stale;
-}
-
-function handle_cleanup(): void
-{
-    if (empty($_SESSION['authorized'])) {
-        redirect('token', 'Authorization required.', true);
-    }
-
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-        redirect('requirements');
-    }
-
-    verify_csrf();
-
-    $results = [];
-
-    foreach (stale_app_dirs() as $dir) {
-        // Best-effort permission normalization so deletion works even when
-        // the files were created with restrictive modes.
-        normalize_permissions($dir);
-
-        $ok = recursive_delete($dir);
-        $results[] = ($ok ? '✓ deleted: ' : '✗ could not fully delete: ').$dir;
-    }
-
-    installer_note('Cleanup attempted: '.count($results).' path(s)');
-
-    $list = implode('<br>', array_map('e', $results));
-    $remaining = stale_app_dirs();
-
-    if ($remaining === []) {
-        redirect('requirements', 'Stale folders removed successfully. Now re-extract the deployment ZIP and re-run the requirements check.');
-    }
-
-    $_SESSION['notice'] = [
-        'message' => 'Partially cleaned. Some paths could not be deleted by the web server (they are owned by your FTP/File Manager user):<br>'.$list.
-            '<br><br>Fix in cPanel: select each folder → Permissions → set 755 (or 777 temporarily) → apply to all items → delete. If deletion still fails, contact your hosting provider to reset the ownership.',
-        'error' => true,
-    ];
-    header('Location: ?step=requirements');
+    header('Location: install.php?step='.$to);
     exit;
 }
 
-/**
- * Best-effort chmod so web-server-owned and restrictive-mode files can be
- * removed by the following delete.
- */
-function normalize_permissions(string $dir): void
-{
-    if (! is_dir($dir)) {
-        return;
-    }
+/* ------------------------------------------------------------------- gate */
 
-    @chmod($dir, 0755);
+if (is_file($marker)) {
+    ?><!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Already installed</title>
+    <style>body{font-family:system-ui;background:#0b1120;color:#e2e8f0;padding:40px;text-align:center}.card{max-width:520px;margin:40px auto;background:#111a2e;border:1px solid #24304d;border-radius:12px;padding:28px}a{color:#93c5fd}</style></head>
+    <body><div class="card"><h1>Already installed</h1>
+    <p>Stunning Touch is already installed on this server. The installer is permanently disabled.</p>
+    <p><a href="index.php">Go to the site</a> · <a href="admin/login">Admin panel</a></p></div></body></html><?php
+    exit;
+}
 
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
+/* --------------------------------------------------- installer key checks */
 
-    foreach ($iterator as $item) {
-        if ($item->isDir()) {
-            @chmod($item->getPathname(), 0755);
+$authorized = false;
+if (is_file($keyFile)) {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'authorize') {
+        // Rate limit: 10 failures / 15 minutes.
+        $attempts = is_file($attemptsFile) ? (json_decode((string) @file_get_contents($attemptsFile), true) ?: []) : [];
+        $now = time();
+        $recent = array_values(array_filter($attempts, fn ($t) => ($now - (int) $t) < 900));
+
+        if (count($recent) >= 10) {
+            $authorized = false;
+            $authError = 'Too many failed attempts. Wait 15 minutes and try again.';
         } else {
-            @chmod($item->getPathname(), 0644);
-        }
-    }
-}
+            $provided = trim((string) ($_POST['install_key'] ?? ''));
+            $expected = trim((string) @file_get_contents($keyFile));
 
-/**
- * @return bool true when the path no longer exists
- */
-function recursive_delete(string $dir): bool
-{
-    if (! is_dir($dir)) {
-        return true;
-    }
-
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-
-    foreach ($iterator as $item) {
-        try {
-            if ($item->isDir() && ! $item->isLink()) {
-                @rmdir($item->getPathname());
+            if ($provided !== '' && hash_equals($expected, $provided)) {
+                $authorized = true;
+                @unlink($attemptsFile);
+                $_SESSION['installer_authorized'] = true;
             } else {
-                @unlink($item->getPathname());
+                $recent[] = $now;
+                @file_put_contents($attemptsFile, json_encode($recent));
+                $authError = 'Invalid installation key.';
+                installer_log('Failed installer authorization attempt');
             }
-        } catch (Throwable) {
-            // Keep going; report failure at the end.
         }
+    } elseif (! empty($_SESSION['installer_authorized'])) {
+        $authorized = true;
     }
-
-    return @rmdir($dir) || ! is_dir($dir);
 }
 
-/* --------------------------------------------------------------------------
- * Step: configuration (domain + database)
- * ------------------------------------------------------------------------ */
+/* --------------------------------------------------------- stale cleanup */
 
-function handle_config(): void
+function stale_paths(): array
 {
-    if (empty($_SESSION['authorized'])) {
-        redirect('token', 'Authorization required.', true);
+    // Leftovers from earlier failed extraction attempts (older package
+    // layouts): a partial app folder and/or a nested document root.
+    $paths = [];
+    foreach ([__DIR__.'/stunningtouch-app', dirname(__DIR__).'/stunningtouch-app'] as $dir) {
+        if (is_dir($dir) && ! is_file($dir.'/vendor/laravel/framework/src/Illuminate/Support/Str.php')) {
+            $paths[] = $dir;
+        }
+    }
+    $nested = __DIR__.'/public_html';
+    if (is_file($nested.'/build/manifest.json') && is_file($nested.'/index.php')) {
+        $paths[] = $nested;
     }
 
-    $defaults = [
-        'app_url' => 'https://'.($_SERVER['HTTP_HOST'] ?? 'yourdomain.com'),
-        'app_name' => 'Stunning Touch',
-        'timezone' => 'Asia/Dhaka',
-        'db_host' => 'localhost',
-        'db_port' => '3306',
-        'db_name' => '',
-        'db_user' => '',
-        'db_pass' => '',
-    ];
-
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
-        verify_csrf();
-
-        $data = [
-            'app_url' => trim((string) ($_POST['app_url'] ?? '')),
-            'app_name' => trim((string) ($_POST['app_name'] ?? '')) ?: 'Stunning Touch',
-            'timezone' => trim((string) ($_POST['timezone'] ?? 'Asia/Dhaka')),
-            'db_host' => trim((string) ($_POST['db_host'] ?? 'localhost')),
-            'db_port' => trim((string) ($_POST['db_port'] ?? '3306')),
-            'db_name' => trim((string) ($_POST['db_name'] ?? '')),
-            'db_user' => trim((string) ($_POST['db_user'] ?? '')),
-            'db_pass' => (string) ($_POST['db_pass'] ?? ''),
-        ];
-
-        $host = parse_url($data['app_url'], PHP_URL_HOST);
-        $errors = [];
-
-        if (! filter_var($data['app_url'], FILTER_VALIDATE_URL) || ! $host) {
-            $errors[] = 'Enter a valid application URL, e.g. https://yourdomain.com';
-        } elseif (! str_starts_with(strtolower($data['app_url']), 'https://') && ! in_array($host, ['localhost', '127.0.0.1'], true)) {
-            $errors[] = 'The application URL must use HTTPS in production (enable AutoSSL / SSL TLS Status in cPanel first).';
-        }
-
-        if (! in_array($data['timezone'], timezone_identifiers_list(), true)) {
-            $errors[] = 'Choose a valid timezone.';
-        }
-
-        foreach (['db_host', 'db_name', 'db_user'] as $field) {
-            if ($data[$field] === '') {
-                $errors[] = ucfirst(str_replace('_', ' ', $field)).' is required.';
-            }
-        }
-
-        // Never trust silently: test the connection now.
-        $dbTest = null;
-        if ($errors === []) {
-            $dbTest = test_database($data);
-            if ($dbTest !== true) {
-                $errors[] = $dbTest;
-            }
-        }
-
-        if ($errors !== []) {
-            redirect('config', implode(' ', $errors), true);
-        }
-
-        $_SESSION['config'] = $data; // never echoed back after this step
-
-        redirect('database');
-    }
-
-    $defaults['app_dir'] = $_SESSION['app_dir'] ?? detect_app_dir();
-
-    echo installer_shell('Configuration', '
-        <h2>Domain & database</h2>
-        <p class="lead">These values generate the production <code>.env</code>. Credentials are sent by POST only, never displayed again, and never logged.</p>
-        <form method="post" action="?step=config">'.csrf_field().'
-            <label for="app_url">Application URL (with https://)</label>
-            <input id="app_url" name="app_url" type="url" value="'.e($defaults['app_url']).'" required>
-
-            <label for="app_name">Application name</label>
-            <input id="app_name" name="app_name" type="text" value="'.e($defaults['app_name']).'" maxlength="100">
-
-            <label for="timezone">Timezone</label>
-            <input id="timezone" name="timezone" type="text" value="'.e($defaults['timezone']).'" list="tzlist">
-            <datalist id="tzlist"><option>Asia/Dhaka</option><option>UTC</option><option>Europe/London</option><option>America/New_York</option></datalist>
-
-            <h2 style="margin-top:26px">MySQL database (cPanel → MySQL Databases)</h2>
-            <div class="grid2">
-                <div>
-                    <label for="db_host">Database host</label>
-                    <input id="db_host" name="db_host" type="text" value="'.e($defaults['db_host']).'">
-                </div>
-                <div>
-                    <label for="db_port">Port</label>
-                    <input id="db_port" name="db_port" type="text" value="'.e($defaults['db_port']).'">
-                </div>
-                <div>
-                    <label for="db_name">Database name</label>
-                    <input id="db_name" name="db_name" type="text" value="'.e($defaults['db_name']).'" required autocomplete="off">
-                </div>
-                <div>
-                    <label for="db_user">Database user</label>
-                    <input id="db_user" name="db_user" type="text" value="'.e($defaults['db_user']).'" required autocomplete="off">
-                </div>
-            </div>
-            <label for="db_pass">Database password</label>
-            <input id="db_pass" name="db_pass" type="password" autocomplete="new-password">
-            <button type="submit">Validate connection & continue</button>
-        </form>', ['current' => 2]);
+    return $paths;
 }
 
-/**
- * @return true|string true when reachable and empty, otherwise an error message
- */
-function test_database(array $config): bool|string
-{
-    $dsn = "mysql:host={$config['db_host']};port={$config['db_port']};dbname={$config['db_name']};charset=utf8mb4";
+$cleanupResults = [];
+if ($authorized && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'cleanup') {
+    foreach (stale_paths() as $path) {
+        normalize_permissions($path);
+        $cleanupResults[] = (recursive_delete($path) ? '✓ removed: ' : '✗ partially removed (check in File Manager): ').basename($path);
+    }
+    installer_log('Cleanup: '.count($cleanupResults).' path(s) processed');
+}
 
-    try {
-        $pdo = new PDO($dsn, $config['db_user'], $config['db_pass'], [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_TIMEOUT => 8,
+/* ------------------------------------------------------ requirements scan */
+
+$checks = [];
+$checksOk = true;
+$mark = function (string $label, bool $ok, string $fix = '') use (&$checks, &$checksOk) {
+    $checks[] = [$label, $ok, $fix];
+    if (! $ok) {
+        $checksOk = false;
+    }
+};
+
+$mark('PHP ≥ 8.3 (found '.PHP_VERSION.')', version_compare(PHP_VERSION, '8.3.0', '>='), 'Switch to PHP 8.3 in cPanel → MultiPHP Manager.');
+$loadedExt = array_map('strtolower', get_loaded_extensions());
+foreach (['pdo_mysql', 'mbstring', 'openssl', 'ctype', 'json', 'fileinfo', 'tokenizer', 'curl', 'filter', 'hash'] as $ext) {
+    $mark('PHP extension: '.$ext, in_array($ext, $loadedExt, true), 'Enable the extension in cPanel → Select PHP Version.');
+}
+$mark('Application files complete (vendor/, artisan)', is_file(__DIR__.'/vendor/autoload.php') && is_file(__DIR__.'/artisan'), 'Re-extract the ZIP into this folder with overwrite enabled.');
+$mark('Compiled frontend assets (public/build/manifest.json)', is_file(__DIR__.'/public/build/manifest.json'), 'Re-extract the ZIP.');
+$mark('.env does not exist yet', ! is_file(__DIR__.'/.env'), 'Delete .env only if this is a retry of a failed attempt (the installer recreates it).');
+$mark('storage/ writable', is_writable(__DIR__.'/storage') || @mkdir(__DIR__.'/storage/framework/views', 0775, true), 'Set storage/ (recursive) to 755 in File Manager → Permissions.');
+$mark('bootstrap/cache writable', is_writable(__DIR__.'/bootstrap/cache'), 'Set bootstrap/cache (recursive) to 755.');
+$stalePaths = stale_paths();
+
+/* ------------------------------------------------------------- installer */
+
+$errors = [];
+$done = false;
+$successHtml = '';
+
+$input = [
+    'app_name' => 'Stunning Touch',
+    'app_url' => 'https://'.($_SERVER['HTTP_HOST'] ?? 'yourdomain.com'),
+    'timezone' => 'Asia/Dhaka',
+    'db_host' => '127.0.0.1',
+    'db_port' => '3306',
+    'db_name' => '',
+    'db_user' => '',
+    'db_pass' => '',
+    'admin_name' => 'Administrator',
+    'admin_email' => '',
+    'admin_pass' => '',
+];
+
+if ($authorized && $checksOk && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'install') {
+    foreach ($input as $key => $default) {
+        $input[$key] = trim((string) ($_POST[$key] ?? $default));
+    }
+    $input['db_pass'] = (string) ($_POST['db_pass'] ?? '');
+
+    $host = parse_url($input['app_url'], PHP_URL_HOST);
+    if ($input['app_name'] === '') {
+        $errors[] = 'Application name is required.';
+    }
+    if (! filter_var($input['app_url'], FILTER_VALIDATE_URL) || ! $host) {
+        $errors[] = 'Application URL must be a valid URL, e.g. https://yourdomain.com';
+    } elseif (! str_starts_with(strtolower($input['app_url']), 'https://') && ! in_array($host, ['localhost', '127.0.0.1'], true)) {
+        $errors[] = 'The application URL must use HTTPS in production (enable AutoSSL in cPanel first).';
+    }
+    if (! in_array($input['timezone'], timezone_identifiers_list(), true)) {
+        $errors[] = 'Choose a valid timezone.';
+    }
+    foreach (['db_host', 'db_name', 'db_user'] as $f) {
+        if ($input[$f] === '') {
+            $errors[] = ucfirst(str_replace('_', ' ', $f)).' is required.';
+        }
+    }
+    if (! filter_var($input['admin_email'], FILTER_VALIDATE_EMAIL)) {
+        $errors[] = 'A valid admin email is required.';
+    }
+    if (strlen($input['admin_pass']) < 10 || ! preg_match('/[a-zA-Z]/', $input['admin_pass']) || ! preg_match('/[0-9]/', $input['admin_pass'])) {
+        $errors[] = 'Admin password must be at least 10 characters with at least one letter and one digit.';
+    }
+
+    if ($errors === []) {
+        // 1. Test the database connection with plain PDO.
+        try {
+            new PDO(
+                "mysql:host={$input['db_host']};port={$input['db_port']};dbname={$input['db_name']};charset=utf8mb4",
+                $input['db_user'],
+                $input['db_pass'],
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 8]
+            );
+        } catch (Throwable $e) {
+            installer_log('DB connect failed: '.substr($e->getMessage(), 0, 200));
+            $errors[] = 'Database connection failed. Check the name, user, password and that the user has ALL PRIVILEGES on the database.';
+        }
+    }
+
+    if ($errors === []) {
+        // 2. Write .env from .env.example in place (file sessions/cache so the
+        //    app boots safely regardless of database state).
+        $appKey = 'base64:'.base64_encode(random_bytes(32));
+        $schedulerSecret = bin2hex(random_bytes(24));
+        write_env(__DIR__.'/.env.example', __DIR__.'/.env', [
+            'APP_NAME' => env_quote($input['app_name']),
+            'APP_ENV' => '"production"',
+            'APP_KEY' => env_quote($appKey),
+            'APP_DEBUG' => '"false"',
+            'APP_URL' => env_quote(rtrim($input['app_url'], '/')),
+            'LOG_LEVEL' => '"warning"',
+            'DB_CONNECTION' => '"mysql"',
+            'DB_HOST' => env_quote($input['db_host']),
+            'DB_PORT' => env_quote($input['db_port']),
+            'DB_DATABASE' => env_quote($input['db_name']),
+            'DB_USERNAME' => env_quote($input['db_user']),
+            'DB_PASSWORD' => env_quote($input['db_pass']),
+            'SESSION_DRIVER' => '"file"',
+            'SESSION_SECURE_COOKIE' => 'true',
+            'CACHE_STORE' => '"file"',
+            'QUEUE_CONNECTION' => '"database"',
+            'FILESYSTEM_DISK' => '"public"',
+            'SCHEDULER_SECRET' => env_quote($schedulerSecret),
         ]);
-    } catch (PDOException $e) {
-        installer_note('Database connection failed: '.substr($e->getMessage(), 0, 200));
+        @chmod(__DIR__.'/.env', 0600);
+        installer_log('Production .env generated');
 
-        return 'Database connection failed. Check host, port, name, user and password. (Common cPanel issue: the DB user is not added to the database with ALL privileges.)';
-    }
+        try {
+            // 3. Boot the framework with the new .env.
+            require __DIR__.'/vendor/autoload.php';
+            $app = require __DIR__.'/bootstrap/app.php';
+            $app->make(Kernel::class)->bootstrap();
 
-    $tables = (int) $pdo->query('SHOW TABLES')->rowCount();
+            // 4. Database safety: only a confirmed-empty database proceeds.
+            //    A previous FAILED attempt (Laravel "migrations" bookkeeping
+            //    table present) is reset automatically; foreign data stops
+            //    the installer without touching anything.
+            $tables = array_map(
+                fn ($t) => is_object($t) ? array_values((array) $t)[0] : $t,
+                DB::select('SHOW TABLES')
+            );
+            if ($tables !== []) {
+                if (! in_array('migrations', $tables, true)) {
+                    throw new RuntimeException('SAFETY STOP: the database is not empty (tables: '.implode(', ', array_slice($tables, 0, 5)).'). Use a fresh empty database — existing data was left untouched.');
+                }
+                Schema::dropAllTables(); // reset a failed attempt
+                installer_log('Reset tables from a previous failed attempt');
+            }
 
-    if ($tables > 0) {
-        installer_note('Blocked install: non-empty database with '.$tables.' table(s)');
+            // 5. Migrate + seed through the Artisan API (no exec).
+            foreach (['config:clear', 'route:clear', 'view:clear'] as $cmd) {
+                try {
+                    Artisan::call($cmd);
+                } catch (Throwable) {
+                }
+            }
+            Artisan::call('migrate', ['--force' => true]);
+            $migrateOutput = trim(Artisan::output());
+            Artisan::call('db:seed', ['--force' => true]);
 
-        return 'SAFETY STOP: the database "'.$config['db_name'].'" already contains '.$tables.' table(s). To protect existing data the installer refuses to migrate or seed a non-empty database. Use a fresh, empty database, or import your data manually (phpMyAdmin).';
-    }
+            foreach (['users', 'tools', 'categories', 'blog_posts', 'site_settings'] as $table) {
+                if (! Schema::hasTable($table)) {
+                    throw new RuntimeException('Verification failed: table "'.$table.'" is missing.');
+                }
+            }
 
-    return true;
-}
+            // 6. Administrator account chosen in the form (resubmit-safe).
+            $admin = User::query()->firstOrNew(['email' => $input['admin_email']]);
+            $admin->name = $input['admin_name'];
+            $admin->password = $input['admin_pass']; // hashed by the model cast
+            $admin->is_active = true;
+            $admin->save();
 
-/* --------------------------------------------------------------------------
- * Step: database confirmation + run installation
- * ------------------------------------------------------------------------ */
+            // 6b. Remove the seeder's well-known default account so no
+            //     publicly-documented credentials survive on the server.
+            $seeded = User::query()->where('email', 'admin@stunningtouch.com')->first();
+            if ($seeded && $seeded->id !== $admin->id && Hash::check('ChangeMe123!', $seeded->password)) {
+                BlogPost::query()->where('user_id', $seeded->id)->update(['user_id' => $admin->id]);
+                $seeded->delete();
+                installer_log('Seeded default admin account removed');
+            }
 
-function handle_database(): void
-{
-    global $keyFile, $attemptsFile;
+            // 7. Public storage: symlink when allowed, copy otherwise.
+            $storageNote = setup_public_storage();
 
-    if (empty($_SESSION['authorized']) || empty($_SESSION['config'])) {
-        redirect('token', 'Authorization required.', true);
-    }
+            // 8. Mark installed, remove key, disable self.
+            @file_put_contents($marker, now()->toDateTimeString().PHP_EOL);
+            @unlink($keyFile);
+            @unlink($attemptsFile);
+            $selfDeleted = @unlink(__FILE__);
+            if (! $selfDeleted) {
+                $stub = "<?php\n// Disabled automatically after successful installation.\nhttp_response_code(410);\nexit('The installer is permanently disabled.');\n";
+                @file_put_contents(__FILE__, $stub);
+            }
+            installer_log('Installation completed successfully');
 
-    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
-        $config = $_SESSION['config'];
+            $base = rtrim($input['app_url'], '/');
+            $cronWeb = '* * * * * /usr/bin/curl -s -m 55 "'.$base.'/run-scheduler/YOUR_SCHEDULER_SECRET" > /dev/null 2>&1';
+            $cronCli = '* * * * * cd '.__DIR__.' && php artisan schedule:run >> /dev/null 2>&1';
 
-        echo installer_shell('Database', '
-            <h2>Confirm fresh database</h2>
-            <p class="lead">The connection to <code>'.e($config['db_name']).'</code> succeeded and the database is <strong>empty</strong>. Migration and seeding will now run. A non-empty database would have been refused for safety.</p>
-            <ul>
-                <li>Migrations create all application tables.</li>
-                <li>Seeding creates default site data, 12 tools, sample content and the default admin account (<code>admin@stunningtouch.com</code> / <code>ChangeMe123!</code> — change it immediately after installation).</li>
-                <li>Existing data is never overwritten or dropped.</li>
-            </ul>
-            <form method="post" action="?step=database">'.csrf_field().'<button type="submit">Run installation</button></form>', ['current' => 3]);
-        exit;
-    }
-
-    verify_csrf();
-
-    @set_time_limit(300); // migrations can take a while on shared hosting
-
-    $config = $_SESSION['config'];
-    $appDir = $_SESSION['app_dir'] ?? detect_app_dir();
-
-    if ($appDir === '' || ! is_dir($appDir)) {
-        redirect('requirements', 'Application directory not found.', true);
-    }
-
-    /* -- 1. Generate production .env ------------------------------------- */
-    $env = generate_env($config);
-    $envPath = $appDir.'/.env';
-
-    if (@file_put_contents($envPath, $env) === false) {
-        redirect('config', 'Could not write '.$appDir.'/.env — make the application folder writable (755, owned by the cPanel user).', true);
-    }
-    @chmod($envPath, 0600); // best effort; hosts may ignore this
-    installer_log_safe($appDir, 'Production .env generated');
-
-    /* -- 2. Bootstrap Laravel and run Artisan via the framework API ------- */
-    $output = '';
-    $success = false;
-
-    try {
-        $output .= run_artisan($appDir, $config);
-        $success = true;
-    } catch (Throwable $e) {
-        installer_log_safe($appDir, 'Installation failed: '.substr($e->getMessage(), 0, 300));
-
-        // Clean up so a retry can start over safely.
-        @unlink($envPath);
-
-        redirect('database', 'Installation failed: '.e_short($e->getMessage(), 300).' The temporary .env was removed — fix the issue and try again.', true);
-    }
-
-    if (! $success) {
-        redirect('database', 'Installation failed unexpectedly.', true);
-    }
-
-    /* -- 3. Storage: symlink when possible, copy otherwise --------------- */
-    $htmlDir = dirname(__DIR__);
-    $storageSetup = setup_storage($appDir, $htmlDir);
-
-    /* -- 4. Final verification ------------------------------------------- */
-    $verify = verify_installation($appDir, $htmlDir);
-
-    /* -- 5. Lock & cleanup ----------------------------------------------- */
-    @file_put_contents($appDir.'/.installed', 'Installed '.date('c').' | installer v'.INSTALLER_VERSION.PHP_EOL);
-    @unlink($keyFile);
-    @unlink($attemptsFile);
-    @unlink($installerDir.'/.installer-events.log');
-
-    disable_installer_script();
-
-    installer_log_safe($appDir, 'Installation completed successfully');
-
-    unset($_SESSION['config']); // drop DB credentials from the session
-
-    $body = '<h2>Installation complete 🎉</h2>
-        <p class="lead">Stunning Touch is installed and ready. The installer has been locked and disabled.</p>
-        <table>
-            <tr><td>Migrations & seeding</td><td class="ok">✓ completed</td></tr>
-            <tr><td>Production .env (in '.$appDir.', outside the webroot)</td><td class="ok">✓ generated (0600 attempt)</td></tr>
-            <tr><td>Public storage</td><td>'.e($storageSetup).'</td></tr>
-            <tr><td>Essential tables & application boot</td><td>'.e($verify).'</td></tr>
-            <tr><td>Installer lock & cleanup</td><td class="ok">✓ '.e($appDir).'/.installed created; install key deleted</td></tr>
-        </table>
-        <h2 style="margin-top:24px">Next steps — do these now</h2>
-        <ul>
-            <li>Open <a href="'.e($config['app_url']).'/admin/login" target="_blank" rel="noopener">/admin/login</a> and sign in as <code>admin@stunningtouch.com</code> / <code>ChangeMe123!</code>.</li>
-            <li><strong>Change the default password immediately</strong> (My Account → Change Password).</li>
-            <li>Configure AI provider credentials (encrypted) under AI Provider settings.</li>
-            <li>Add the cPanel cron job — see INSTALL.txt next to the extracted package.</li>
-            <li>If the installer could not delete itself, remove <code>public_html/installer/</code> manually.</li>
-        </ul>
-        <p class="note">If the site shows a blank page or 500 error, enable "Display errors" briefly in cPanel → MultiPHP INI or check stunningtouch-app/storage/logs/laravel.log.</p>';
-
-    echo installer_shell('Finish', $body, ['current' => 5]);
-}
-
-function e_short(string $message, int $limit): string
-{
-    return mb_substr($message, 0, $limit);
-}
-
-/* --------------------------------------------------------------------------
- * Environment generation
- * ------------------------------------------------------------------------ */
-
-function generate_env(array $config): string
-{
-    $appKey = 'base64:'.base64_encode(random_bytes(32)); // cryptographically secure, Laravel-compatible
-    $schedulerSecret = bin2hex(random_bytes(24));         // 48 hex chars
-    $host = (string) parse_url($config['app_url'], PHP_URL_HOST);
-
-    $lines = [
-        '# Generated by the Stunning Touch installer — '.date('c'),
-        '',
-        'APP_NAME=\''.str_replace("'", "\'", $config['app_name']).'\'',
-        'APP_ENV=production',
-        'APP_KEY=\''.$appKey.'\'',
-        'APP_DEBUG=false',
-        'APP_URL='.$config['app_url'],
-        '',
-        'APP_LOCALE=en',
-        'APP_FALLBACK_LOCALE=en',
-        'APP_FAKER_LOCALE=en_US',
-        '',
-        'APP_MAINTENANCE_DRIVER=file',
-        '',
-        'BCRYPT_ROUNDS=12',
-        '',
-        'LOG_CHANNEL=stack',
-        'LOG_STACK=single',
-        'LOG_DEPRECATIONS_CHANNEL=null',
-        'LOG_LEVEL=warning',
-        '',
-        'DB_CONNECTION=mysql',
-        'DB_HOST='.addcslashes($config['db_host'], '\'#'),
-        'DB_PORT='.(preg_replace('/[^0-9]/', '', $config['db_port']) ?: '3306'),
-        'DB_DATABASE='.addcslashes($config['db_name'], '\'#'),
-        'DB_USERNAME='.addcslashes($config['db_user'], '\'#'),
-        'DB_PASSWORD='.addcslashes($config['db_pass'], '\'#'),
-        '',
-        'SESSION_DRIVER=database',
-        'SESSION_LIFETIME=120',
-        'SESSION_ENCRYPT=false',
-        'SESSION_SECURE_COOKIE=true',
-        'SESSION_PATH=/',
-        'SESSION_DOMAIN=null',
-        '',
-        'BROADCAST_CONNECTION=log',
-        'FILESYSTEM_DISK=public',
-        'QUEUE_CONNECTION=database',
-        '',
-        'CACHE_STORE=database',
-        '',
-        'MAIL_MAILER=mail',
-        'MAIL_FROM_ADDRESS=hello@'.preg_replace('/^www\./', '', $host),
-        'MAIL_FROM_NAME="${APP_NAME}"',
-        '',
-        '# Protected web-cron endpoint: /run-scheduler/{secret}',
-        'SCHEDULER_SECRET='.$schedulerSecret,
-        '',
-        '# NOTE: AI provider endpoints, API keys and Cloudflare image',
-        '# credentials are configured later in the admin panel and stored',
-        '# encrypted in the database — never in this file.',
-        '',
-        'VITE_APP_NAME="${APP_NAME}"',
-        '',
-    ];
-
-    return implode(PHP_EOL, $lines);
-}
-
-/* --------------------------------------------------------------------------
- * Artisan via framework API (no exec / proc_open)
- * ------------------------------------------------------------------------ */
-
-function run_artisan(string $appDir, array $config): string
-{
-    $log = '';
-
-    $run = function (string $command, array $parameters = []) use (&$log, $config): string {
-        $exitCode = Artisan::call($command, $parameters);
-        $log .= '$ php artisan '.$command.($exitCode === 0 ? '  [ok]' : '  [FAILED '.$exitCode.']').PHP_EOL;
-        $out = trim(Artisan::output());
-        // Redact anything that could carry credentials from command output.
-        $out = str_replace([$config['db_pass']], '***', $out);
-        $log .= ($out !== '' ? $out.PHP_EOL : '');
-
-        if ($exitCode !== 0) {
-            throw new RuntimeException('Artisan command "'.$command.'" failed with exit code '.$exitCode.'.');
-        }
-
-        return $out;
-    };
-
-    // Bootstrap the application with the freshly written .env.
-    require $appDir.'/vendor/autoload.php';
-    $app = require $appDir.'/bootstrap/app.php';
-    $app->make(Kernel::class)->bootstrap();
-
-    // Safety: refuse to install into a database that already has tables.
-    $pdo = DB::connection()->getPdo();
-    $existingTables = (int) $pdo->query('SHOW TABLES')->rowCount();
-    if ($existingTables > 0) {
-        throw new RuntimeException('SAFETY STOP: the database already contains '.$existingTables.' table(s). Nothing was modified.');
-    }
-
-    // 1. Clear stale caches from the build machine (if any).
-    try {
-        $run('config:clear');
-        $run('route:clear');
-        $run('view:clear');
-    } catch (Throwable) {
-        // Non-fatal: a failed cache clear must not block installation.
-        $log .= '(cache clear skipped)'.PHP_EOL;
-    }
-
-    // 2. Migrations.
-    $run('migrate', ['--force' => true]);
-
-    // 3. Seed (only reached when the database was confirmed empty).
-    $run('db:seed', ['--force' => true]);
-
-    // 4. Verify essential tables + URL generation with the configured APP_URL.
-    foreach (['users', 'tools', 'categories', 'blog_posts', 'site_settings'] as $table) {
-        if (! Schema::hasTable($table)) {
-            throw new RuntimeException('Verification failed: table "'.$table.'" is missing after migration.');
+            ?><!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Installation complete</title>
+            <style>body{font-family:system-ui;background:#0b1120;color:#e2e8f0;padding:24px}.card{max-width:720px;margin:24px auto;background:#111a2e;border:1px solid #24304d;border-radius:12px;padding:28px}h1{color:#fff}a{color:#93c5fd}.ok{background:#0d2b22;border:1px solid #14532d;color:#86efac;border-radius:8px;padding:12px}table{width:100%;border-collapse:collapse;font-size:.9rem}td{padding:6px 8px;border-bottom:1px solid #24304d}.ok{color:#86efac}pre{background:#0b1120;padding:10px;border-radius:8px;overflow-x:auto;color:#93c5fd;font-size:.8rem}code{color:#93c5fd}p,li{color:#b6c2d9;line-height:1.6;font-size:.92rem}</style></head>
+            <body><div class="card">
+            <h1>Installation complete 🎉</h1>
+            <div class="ok">Database migrated and seeded. Administrator account created<?= $selfDeleted ? ' — the installer deleted itself.' : ' — delete install.php from the server now.' ?></div>
+            <table>
+                <tr><td>Site</td><td><a href="<?= $esc($base) ?>"><?= $esc($base) ?></a></td></tr>
+                <tr><td>Admin panel</td><td><a href="<?= $esc($base) ?>/admin/login"><?= $esc($base) ?>/admin/login</a></td></tr>
+                <tr><td>Administrator</td><td><?= $esc($input['admin_email']) ?> (your chosen password)</td></tr>
+                <tr><td>Public storage</td><td><?= $esc($storageNote) ?></td></tr>
+                <tr><td>Lock &amp; cleanup</td><td class="ok">✓ storage/app/installed created; installer key deleted</td></tr>
+            </table>
+            <p><strong>Next — add the cPanel cron job</strong> (Cron Jobs → once per minute) with YOUR secret from .env:</p>
+            <pre><?= $esc($cronWeb) ?></pre>
+            <p class="muted">CLI equivalent (if your host provides a PHP CLI): <code><?= $esc($cronCli) ?></code></p>
+            <p>Then configure AI provider credentials (stored encrypted) under <strong>Admin → AI Provider</strong>.</p>
+            </div></body></html><?php
+            exit;
+        } catch (Throwable $e) {
+            installer_log('Installation failed: '.substr($e->getMessage(), 0, 300));
+            // Keep the .env so a retry only needs "Run installation" again;
+            // the database safety rules above make retries safe.
+            $errors[] = 'Installation failed: '.mb_substr($e->getMessage(), 0, 300).
+                "\nFix the problem and submit again — the database safety check will decide what is safe.";
         }
     }
-
-    $generated = rtrim(url('/'), '/');
-    if (! str_starts_with($generated, rtrim($config['app_url'], '/'))) {
-        $log .= 'Warning: generated URL "'.$generated.'" does not match the configured APP_URL.'.PHP_EOL;
-    }
-
-    $log .= 'Application boot, migrations, seeding and verification completed.'.PHP_EOL;
-
-    // Persist the (credential-redacted) log for troubleshooting.
-    installer_log($appDir, $log);
-
-    return $log;
 }
 
-/* --------------------------------------------------------------------------
- * Storage setup
- * ------------------------------------------------------------------------ */
+/* ------------------------------------------------------------ helper fns */
 
-function setup_storage(string $appDir, string $htmlDir): string
+function write_env(string $example, string $target, array $values): void
 {
-    // Required writable directories already exist in the package; verify.
-    $required = [
-        'storage/app/public',
-        'storage/framework/cache/data',
-        'storage/framework/sessions',
-        'storage/framework/views',
-        'storage/logs',
-        'bootstrap/cache',
-    ];
-    foreach ($required as $dir) {
-        $path = $appDir.'/'.$dir;
-        if (! is_dir($path)) {
-            @mkdir($path, 0755, true);
+    $source = is_file($example) ? file($example, FILE_IGNORE_NEW_LINES) : [];
+    $out = [];
+    $done = [];
+    foreach ($source as $line) {
+        if (preg_match('/^([A-Z0-9_]+)=/', $line, $m) && array_key_exists($m[1], $values)) {
+            $out[] = $m[1].'='.$values[$m[1]];
+            $done[$m[1]] = true;
+
+            continue;
+        }
+        $out[] = $line;
+    }
+    foreach ($values as $key => $value) {
+        if (empty($done[$key])) {
+            $out[] = $key.'='.$value;
         }
     }
+    file_put_contents($target, implode("\n", $out)."\n");
+}
 
-    // Public storage: media lives in <app>/storage/app/public and is exposed
-    // at /storage/... The preferred mechanism is a symlink.
-    $link = $htmlDir.'/storage';
-    $target = $appDir.'/storage/app/public';
+function env_quote(string $value): string
+{
+    $escaped = str_replace(['\\', '"', '$'], ['\\\\', '\\"', '\\$'], $value);
+
+    return '"'.$escaped.'"';
+}
+
+function setup_public_storage(): string
+{
+    $link = __DIR__.'/public/storage';
+    $target = __DIR__.'/storage/app/public';
 
     if (file_exists($link) || is_link($link)) {
         return 'already present ✓';
@@ -923,14 +415,11 @@ function setup_storage(string $appDir, string $htmlDir): string
         return 'symlink created ✓';
     }
 
-    // Fallback: copy current media into public_html/storage. Note for the
-    // admin: newly uploaded covers after installation need to be copied
-    // again (the admin Media Library shows the source path).
+    // Fallback: copy media into public/storage (re-copy after future uploads,
+    // or ask the host to enable symlinks).
     $ok = recursive_copy($target, $link);
 
-    return $ok
-        ? 'copied (symlink disabled by hosting) — copy storage/app/public into public_html/storage again after future media uploads ⚠'
-        : 'FAILED — create the symlink or copy storage/app/public to public_html/storage manually ⚠';
+    return $ok ? 'copied (symlink disabled by hosting) ⚠ re-copy after media uploads' : 'FAILED — create public/storage manually ⚠';
 }
 
 function recursive_copy(string $src, string $dst): bool
@@ -938,24 +427,20 @@ function recursive_copy(string $src, string $dst): bool
     if (! is_dir($src)) {
         return true;
     }
-    if (! @mkdir($dst, 0755, true) && ! is_dir($dst)) {
+    if (! @mkdir($dst, 0775, true) && ! is_dir($dst)) {
         return false;
     }
-
     $iterator = new RecursiveIteratorIterator(
         new RecursiveDirectoryIterator($src, FilesystemIterator::SKIP_DOTS),
         RecursiveIteratorIterator::SELF_FIRST
     );
-
     foreach ($iterator as $item) {
         $dest = $dst.DIRECTORY_SEPARATOR.$iterator->getSubPathName();
         try {
             if ($item->isDir()) {
-                @mkdir($dest, 0755, true);
-            } else {
-                if (! @copy($item->getPathname(), $dest)) {
-                    return false;
-                }
+                @mkdir($dest, 0775, true);
+            } elseif (! @copy($item->getPathname(), $dest)) {
+                return false;
             }
         } catch (Throwable) {
             return false;
@@ -965,65 +450,147 @@ function recursive_copy(string $src, string $dst): bool
     return true;
 }
 
-/* --------------------------------------------------------------------------
- * Final verification
- * ------------------------------------------------------------------------ */
-
-function verify_installation(string $appDir, string $htmlDir): string
+function normalize_permissions(string $dir): void
 {
-    $results = [];
-
-    $results[] = is_file($appDir.'/.env') ? '.env present ✓' : '.env MISSING ✗';
-    $results[] = is_file($htmlDir.'/build/manifest.json') ? 'frontend assets ✓' : 'frontend assets MISSING ✗';
-    $results[] = is_file($appDir.'/.installed') || true ? 'boot verified during install ✓' : '';
-
-    return implode(' · ', array_filter($results));
-}
-
-/* --------------------------------------------------------------------------
- * Self-disable
- * ------------------------------------------------------------------------ */
-
-function disable_installer_script(): void
-{
-    $self = __FILE__;
-
-    // Try to remove ourselves entirely (hosts usually allow this).
-    if (@unlink($self)) {
+    if (! is_dir($dir)) {
         return;
     }
-
-    // Otherwise replace the entry point with a permanent lock notice so the
-    // installer can never run again.
-    $stub = "<?php\n// Disabled automatically after successful installation.\n"
-        ."http_response_code(410);\n"
-        ."exit('The installer is permanently disabled. If this file is still present, delete the installer directory.');\n";
-    @file_put_contents($self, $stub);
-    @chmod($self, 0444);
+    @chmod($dir, 0755);
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($iterator as $item) {
+        @chmod($item->getPathname(), $item->isDir() ? 0755 : 0644);
+    }
 }
 
-/* --------------------------------------------------------------------------
- * Router
- * ------------------------------------------------------------------------ */
+function recursive_delete(string $dir): bool
+{
+    if (! is_dir($dir)) {
+        return true;
+    }
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($iterator as $item) {
+        try {
+            if ($item->isDir() && ! $item->isLink()) {
+                @rmdir($item->getPathname());
+            } else {
+                @unlink($item->getPathname());
+            }
+        } catch (Throwable) {
+        }
+    }
 
-$step = (string) ($_GET['step'] ?? 'token');
-$allowed = ['token', 'requirements', 'config', 'database', 'cleanup'];
-
-if (! in_array($step, $allowed, true)) {
-    $step = 'token';
+    return @rmdir($dir) || ! is_dir($dir);
 }
 
-try {
-    match ($step) {
-        'token' => handle_token(),
-        'requirements' => handle_requirements(),
-        'config' => handle_config(),
-        'database' => handle_database(),
-        'cleanup' => handle_cleanup(),
-    };
-} catch (Throwable $e) {
-    http_response_code(500);
-    // Never expose stack traces or credentials.
-    installer_note('Unhandled error: '.substr($e->getMessage(), 0, 300));
-    echo installer_shell('Unexpected error', '<p class="error">An unexpected error occurred. The error has been logged. Nothing destructive was executed — you can safely retry.</p>');
-}
+/* ------------------------------------------------------------------- view */
+
+$authError = $authError ?? '';
+$showAuth = is_file($keyFile) && ! $authorized;
+$showForm = $authorized && $checksOk && ! $done;
+?>
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Stunning Touch — Install</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:radial-gradient(1200px 600px at 50% -10%,#1e1b4b 0%,#0b1120 55%);color:#e2e8f0;min-height:100vh;padding:28px 14px}
+.card{max-width:720px;margin:0 auto;background:#111a2e;border:1px solid #24304d;border-radius:16px;padding:26px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#a855f7);display:flex;align-items:center;justify-content:center;font-weight:800}
+h1{font-size:1.25rem;margin:0}h2{font-size:1rem;margin:22px 0 6px;color:#fff}
+p,li{color:#b6c2d9;font-size:.92rem;line-height:1.55}
+label{display:block;font-size:.8rem;font-weight:600;margin:12px 0 4px;color:#96a5c0;text-transform:uppercase;letter-spacing:.04em}
+input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #2c3a5c;background:#0b1424;color:#e2e8f0;font-size:.95rem}
+input:focus{outline:2px solid #8b5cf6;outline-offset:1px}
+.row{display:flex;gap:10px}.row>div{flex:1}
+button{margin-top:20px;width:100%;padding:12px;border:0;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#a855f7);color:#fff;font-weight:700;font-size:1rem;cursor:pointer}
+button:hover{filter:brightness(1.1)}
+.error{background:#3b1220;border:1px solid #7f1d1d;color:#fca5a5;border-radius:8px;padding:12px;margin:14px 0;font-size:.9rem;white-space:pre-wrap;word-break:break-word}
+.ok{background:#0d2b22;border:1px solid #14532d;color:#86efac;border-radius:8px;padding:12px;margin:14px 0;font-size:.9rem}
+table{width:100%;border-collapse:collapse;font-size:.85rem}td{padding:7px 6px;border-bottom:1px solid #24304d;vertical-align:top}
+.ok{color:#34d399;font-weight:700}.bad{color:#f87171;font-weight:700}
+code{color:#93c5fd;font-size:.82rem}a{color:#93c5fd}.muted{color:#7c8db0;font-size:.8rem}
+</style></head><body><div class="card">
+<header><div class="logo">S</div><div><h1>Stunning Touch — Installer</h1><p class="muted">cPanel shared hosting · no SSH required · v<?= INSTALLER_VERSION ?></p></div></header>
+
+<?php if ($showAuth) { ?>
+    <h2>Authorization</h2>
+    <p>Enter the installation key from the <code>.install-key</code> file that shipped inside the ZIP (also saved locally by the builder as <code>deploy/INSTALL-KEY.local.txt</code>).</p>
+    <?php if ($authError !== '') { ?><div class="error"><?= $esc($authError) ?></div><?php } ?>
+    <form method="post" action="install.php">
+        <input type="hidden" name="action" value="authorize">
+        <input type="hidden" name="_csrf" value="<?= $esc(csrf_token()) ?>">
+        <label>Installation key</label>
+        <input name="install_key" type="password" autocomplete="off" required autofocus>
+        <button type="submit">Authorize installer</button>
+    </form>
+<?php } elseif ($cleanupResults !== []) { ?>
+    <h2>Cleanup result</h2>
+    <div class="ok"><?php foreach ($cleanupResults as $r) {
+        echo $esc($r).'<br>';
+    } ?></div>
+    <p>The stale folders are gone. Now re-extract the deployment ZIP into this folder (overwrite when asked) and reload this page.</p>
+<?php } elseif (! $checksOk || $stalePaths !== []) { ?>
+    <h2>System requirements</h2>
+    <table>
+        <?php foreach ($checks as [$label, $ok, $fix]) { ?>
+            <tr><td class="<?= $ok ? 'ok' : 'bad' ?>"><?= $ok ? '✓' : '✗' ?></td><td><?= $esc($label) ?></td><td><?= $esc($fix) ?></td></tr>
+        <?php } ?>
+    </table>
+    <?php if ($stalePaths !== []) { ?>
+        <h2>Previous extraction detected</h2>
+        <p>Leftover folders from an earlier failed extraction will be permanently deleted (the installer runs as the web-server user, which can delete files File Manager cannot):</p>
+        <ul><?php foreach ($stalePaths as $p) { ?><li><code><?= $esc($p) ?></code></li><?php } ?></ul>
+        <form method="post" action="install.php">
+            <input type="hidden" name="action" value="cleanup">
+            <input type="hidden" name="_csrf" value="<?= $esc(csrf_token()) ?>">
+            <button type="submit">Delete stale folders &amp; re-check</button>
+        </form>
+    <?php } ?>
+    <p class="muted">Fix the failed checks and reload this page.</p>
+<?php } else { ?>
+    <h2>Install Stunning Touch</h2>
+    <p>This wizard writes <code>.env</code>, imports the database schema with default data and creates your administrator account. The installer deletes itself when finished.</p>
+    <?php if ($errors !== []) { ?><div class="error"><?= $esc(implode("\n", $errors)) ?></div><?php } ?>
+    <form method="post" action="install.php" autocomplete="off">
+        <input type="hidden" name="action" value="install">
+        <input type="hidden" name="_csrf" value="<?= $esc(csrf_token()) ?>">
+        <h2>Site</h2>
+        <label>Application URL (https://)</label>
+        <input name="app_url" type="url" value="<?= $esc($input['app_url']) ?>" required>
+        <label>Application name</label>
+        <input name="app_name" value="<?= $esc($input['app_name']) ?>" maxlength="100" required>
+        <label>Timezone</label>
+        <input name="timezone" value="<?= $esc($input['timezone']) ?>" list="tzlist">
+        <datalist id="tzlist"><option>Asia/Dhaka</option><option>UTC</option><option>Europe/London</option><option>America/New_York</option></datalist>
+        <h2>MySQL database (cPanel → MySQL Databases)</h2>
+        <div class="row">
+            <div><label>Host</label><input name="db_host" value="<?= $esc($input['db_host']) ?>" required></div>
+            <div><label>Port</label><input name="db_port" value="<?= $esc($input['db_port']) ?>" required></div>
+        </div>
+        <label>Database name</label>
+        <input name="db_name" value="<?= $esc($input['db_name']) ?>" required>
+        <div class="row">
+            <div><label>User</label><input name="db_user" value="<?= $esc($input['db_user']) ?>" required></div>
+            <div><label>Password</label><input name="db_pass" type="password" autocomplete="new-password"></div>
+        </div>
+        <h2>Administrator account</h2>
+        <label>Name</label>
+        <input name="admin_name" value="<?= $esc($input['admin_name']) ?>" required>
+        <label>Email</label>
+        <input name="admin_email" type="email" value="<?= $esc($input['admin_email']) ?>" required>
+        <label>Password (min 10 chars, letters + digits)</label>
+        <input name="admin_pass" type="password" minlength="10" required>
+        <button type="submit">Install Stunning Touch</button>
+        <p class="muted">The connection is tested before anything is written. Migrations run after the database check passes. A database from a previous failed attempt is reset automatically; foreign data is never touched.</p>
+    </form>
+<?php } ?>
+</div></body></html>

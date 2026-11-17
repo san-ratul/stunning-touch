@@ -1,0 +1,38 @@
+# Stunning Touch root .htaccess — for shared hosting where the document
+# root is the project root (Apache & LiteSpeed compatible).
+#
+# - While install.php exists (app not installed yet), everything is routed
+#   to the web installer.
+# - After a successful install the installer deletes itself and the app is
+#   served from public/.
+# - Dotfiles (.env, .install-key, ...) are never served.
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Not installed yet: send everything to the web installer
+    RewriteCond %{DOCUMENT_ROOT}/install.php -f
+    RewriteCond %{REQUEST_URI} !install\.php
+    RewriteRule ^ install.php [L]
+
+    # Serve the application from public/
+    RewriteCond %{REQUEST_URI} !install\.php
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# Never serve sensitive files (only matters if mod_rewrite is unavailable)
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
