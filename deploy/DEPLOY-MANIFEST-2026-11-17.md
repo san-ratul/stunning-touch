@@ -64,9 +64,11 @@ README.md
 - The Monetag verification meta tag in the public layout is unchanged and unrelated to this feature.
 - If the previous per-placement ad system had live rows in production, they remain in the database untouched but are no longer rendered. The audit confirmed the local database had zero advertisement rows before this change.
 
-## Patch — analytics 500 fix (commit b23da29)
+## Patch — analytics 500 fixes (commits b23da29 + 3ee1fa1)
 
-- **Package:** deploy/stunningtouch-update-analytics-fix.zip (single file)
-- **SHA-256:** 0f3527cfffee2e9b80f50c234398c5465162cc0e2eb5862b74a4597fb9b75573
-- Changed file: app/Http/Controllers/Admin/AnalyticsController.php (double-quoted SQL literals replaced with single quotes — safe under all MySQL/MariaDB sql_mode settings)
+- **Package:** deploy/stunningtouch-update-analytics-fix.zip (single file, latest rebuild)
+- **SHA-256:** 783e759e1348677becc169ee0f5ec53f027d138bf1b8aaa7488e5105199c74b4
+- Changed file: app/Http/Controllers/Admin/AnalyticsController.php
+  1. Double-quoted SQL literals replaced with single quotes — safe under all MySQL/MariaDB sql_mode settings.
+  2. Root cause of the 500: the traffic-source classify closure referenced $searchEngines/$socialSites without a use clause — pre-existing bug that triggers only when real referrer data exists. Regression test added (tests/Feature/AnalyticsPageTest.php).
 
