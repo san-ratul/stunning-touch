@@ -90,6 +90,10 @@ class ArtisanRunner
             'description' => 'List all registered routes.',
             'options' => [],
         ],
+        'schedule:list' => [
+            'description' => 'List the scheduled tasks and their next due time (read-only).',
+            'options' => [],
+        ],
         'storage:link' => [
             'description' => 'Create the public/storage symbolic link (idempotent).',
             'options' => [],

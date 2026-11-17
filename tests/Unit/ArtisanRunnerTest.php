@@ -104,6 +104,19 @@ class ArtisanRunnerTest extends TestCase
         $this->assertParseError('migrate --pretend', 'unknown_option');
     }
 
+    public function test_schedule_list_is_allowed_read_only(): void
+    {
+        $parsed = $this->runner->parse('schedule:list');
+
+        $this->assertSame(['schedule:list'], $parsed['argv']);
+        $this->assertSame('schedule:list', $parsed['display']);
+
+        // Read-only: no options, no arguments are accepted for this command.
+        $this->assertParseError('schedule:list --raw', 'unknown_option');
+        $this->assertParseError('schedule:list --verbose', 'unknown_option');
+        $this->assertParseError('schedule:list work', 'unexpected_argument');
+    }
+
     public function test_rejects_unexpected_arguments(): void
     {
         $this->assertParseError('db:seed DatabaseSeeder', 'unexpected_argument');
@@ -167,8 +180,9 @@ class ArtisanRunnerTest extends TestCase
         $this->assertContains('view:clear', $names);
         $this->assertContains('about', $names);
         $this->assertContains('route:list', $names);
+        $this->assertContains('schedule:list', $names);
         $this->assertContains('storage:link', $names);
-        $this->assertCount(11, $catalog);
+        $this->assertCount(12, $catalog);
     }
 
     public function test_output_truncation_caps_output_at_the_limit(): void
