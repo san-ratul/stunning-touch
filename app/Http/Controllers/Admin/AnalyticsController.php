@@ -52,7 +52,7 @@ class AnalyticsController extends Controller
             ->get();
 
         $referrers = PageView::query()
-            ->selectRaw('COALESCE(referrer_domain, "(direct)") as source, COUNT(*) as views')
+            ->selectRaw("COALESCE(referrer_domain, '(direct)') as source, COUNT(*) as views")
             ->where('visited_at', '>=', $since)
             ->groupBy('referrer_domain')
             ->orderByDesc('views')
@@ -60,14 +60,14 @@ class AnalyticsController extends Controller
             ->get();
 
         $devices = PageView::query()
-            ->selectRaw('COALESCE(device_type, "unknown") as device, COUNT(*) as views')
+            ->selectRaw("COALESCE(device_type, 'unknown') as device, COUNT(*) as views")
             ->where('visited_at', '>=', $since)
             ->groupBy('device_type')
             ->orderByDesc('views')
             ->get();
 
         $browsers = PageView::query()
-            ->selectRaw('COALESCE(browser, "unknown") as browser, COUNT(*) as views')
+            ->selectRaw("COALESCE(browser, 'unknown') as browser, COUNT(*) as views")
             ->where('visited_at', '>=', $since)
             ->groupBy('browser')
             ->orderByDesc('views')
@@ -109,7 +109,7 @@ class AnalyticsController extends Controller
 
         $domains = PageView::query()
             ->where('visited_at', '>=', $since)
-            ->selectRaw('COALESCE(referrer_domain, "(direct)") as domain, COUNT(*) as views')
+            ->selectRaw("COALESCE(referrer_domain, '(direct)') as domain, COUNT(*) as views")
             ->groupBy('referrer_domain')
             ->orderByDesc('views')
             ->limit(200)
