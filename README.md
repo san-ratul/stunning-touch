@@ -294,7 +294,7 @@ The suite covers admin authentication and password management, AI provider integ
 
 ## Production Deployment (shared hosting)
 
-The included `deploy/` folder provides a complete one-ZIP cPanel workflow with a browser-based installer — **no SSH, Composer, or Node.js needed on the server**:
+The included `deploy/` folder provides a proven one-ZIP cPanel workflow with a self-contained browser installer — **no SSH, Composer, or Node.js needed on the server**:
 
 1. **Build locally** (your dev machine has Node.js):
 
@@ -304,17 +304,19 @@ The included `deploy/` folder provides a complete one-ZIP cPanel workflow with a
    powershell -ExecutionPolicy Bypass -File deploy\build-deploy-package.ps1
    ```
 
-   This produces `deploy/stunningtouch-deploy.zip` (+ SHA-256 checksum file) containing the full Laravel app **with production `vendor/`**, the compiled frontend assets, and a secure temporary installer.
+   This produces `deploy/stunningtouch-deploy.zip` (+ SHA-256 checksum) containing the complete application **with production `vendor/`**, compiled assets, and a temporary self-deleting installer at its root.
 
-2. **Upload & extract** the ZIP in the cPanel home directory (see `deploy/INSTALL.txt` for the full checklist and a Layout 2 fallback for hosts that force the app inside `public_html`).
-3. **Run the installer** at `https://yourdomain.com/installer/install.php` — enter the installation key from `installer/INSTALL-KEY.txt`, pass the requirements check, provide your domain and MySQL credentials, and confirm. The installer generates the production `.env` (fresh `APP_KEY` + scheduler secret, stored *outside* the webroot), refuses to touch a non-empty database, runs migrations and seeding through Laravel's Artisan API, sets up public storage, and locks itself permanently.
-4. **No Redis, queue workers or WebSockets required** — sessions, cache and queue use the database connection. The web-cron endpoint drives the scheduler:
+2. **Upload & extract** the ZIP directly into `public_html` (overwrite when asked). The app files, `index.php`, root `.htaccess` and `install.php` all sit at the document root — the root `.htaccess` routes requests through `public/` and blocks dotfiles (`.env`, `.install-key`).
+
+3. **Run the installer** at `https://yourdomain.com/install.php` (all uninstalled URLs land there automatically). Enter the installation key (`.install-key`, also saved locally as `deploy/INSTALL-KEY.local.txt`), pass the requirements check, provide your domain + MySQL credentials **and your own administrator account**. The installer writes `.env` (fresh `APP_KEY` + scheduler secret, file-based sessions/cache), refuses to touch foreign databases (failed-attempt tables are reset automatically), runs migrations + seeding through Laravel's Artisan API, removes the well-known seeded default account, sets up public storage (symlink when allowed, copy otherwise) and deletes itself. A permanent marker (`storage/app/installed`) locks it.
+
+4. **No Redis, queue workers or WebSockets required** — the scheduler runs through the protected web-cron endpoint:
 
    ```cron
    * * * * * /usr/bin/curl -s -m 55 "https://yourdomain.com/run-scheduler/YOUR_SCHEDULER_SECRET" > /dev/null 2>&1
    ```
 
-5. **Change the default admin password immediately** and configure AI providers (encrypted, in-database) in the admin panel.
+5. **Configure AI providers** (encrypted, in-database) in the admin panel. Full checklist and troubleshooting: `deploy/INSTALL.txt` and `.docs/SHARED_HOSTING_DEPLOYMENT.md`.
 
 ## Database & Seeders
 
