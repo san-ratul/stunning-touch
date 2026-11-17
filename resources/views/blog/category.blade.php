@@ -23,9 +23,6 @@
                 @endif
             </div>
             <aside class="space-y-6">
-                @if($ads['sidebar'] ?? null)
-                    {!! $ads['sidebar'] !!}
-                @endif
                 <div class="card p-5">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-900">All Categories</h2>
                     <ul class="mt-3 space-y-2">

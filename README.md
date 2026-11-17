@@ -72,7 +72,7 @@ The project is designed for **shared hosting (cPanel) deployment** — no Node.j
 | Technical SEO: canonical URLs, XML sitemap, `robots.txt`, structured data | ✅ Implemented |
 | Privacy-conscious visitor analytics (rotating daily visitor hash — no raw IPs) | ✅ Implemented |
 | Tool-usage statistics (real processing events only) | ✅ Implemented |
-| Universal advertisement manager (any network, placements, targeting, scheduling) | ✅ Implemented |
+| Global footer advertisement manager (paste any network snippet, e.g. Monetag; one toggle) | ✅ Implemented |
 | Static pages (About, Privacy Policy, Terms, Disclaimer) with contact form | ✅ Implemented |
 | Blog CMS for visitors (listing, categories, articles) | ✅ Implemented |
 

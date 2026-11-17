@@ -53,7 +53,7 @@
                         ['monitoring', 'AI Monitoring', 'sparkles', 'admin.monitoring.index'],
                     ],
                     'Growth' => [
-                        ['ads', 'Advertisements', 'megaphone', 'admin.advertisements.index'],
+                        ['ads', 'Advertisement', 'megaphone', 'admin.advertisements.edit'],
                         ['seo', 'SEO Manager', 'search', 'admin.seo.index'],
                     ],
                     'System' => [

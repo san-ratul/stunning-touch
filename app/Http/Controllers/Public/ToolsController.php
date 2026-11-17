@@ -5,13 +5,12 @@ namespace App\Http\Controllers\Public;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Tool;
-use App\Support\AdRenderer;
 use App\Support\SeoResolver;
 use Illuminate\Http\Request;
 
 class ToolsController extends Controller
 {
-    public function index(Request $request)
+    public function index()
     {
         $categories = Category::query()
             ->active()
@@ -29,7 +28,6 @@ class ToolsController extends Controller
             'categories' => $categories,
             'seo' => $meta,
             'pageType' => 'tools_index',
-            'ad' => AdRenderer::render('category_top', 'tools_index', null, $request->attributes->get('device', 'all')),
         ]);
     }
 

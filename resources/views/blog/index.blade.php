@@ -7,10 +7,6 @@
         <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">The {{ \App\Support\SeoResolver::siteName() }} Blog</h1>
         <p class="mt-3 max-w-2xl text-slate-600">Guides, tips and tutorials about online tools, productivity, SEO and web development.</p>
 
-        @if($ads['top'] ?? null)
-            {!! $ads['top'] !!}
-        @endif
-
         @if($featuredPost)
             <a href="{{ route('blog.show', $featuredPost->slug) }}" class="card card-hover mt-8 block overflow-hidden">
                 <div class="grid md:grid-cols-2">
@@ -48,9 +44,6 @@
             </div>
 
             <aside class="space-y-6">
-                @if($ads['sidebar'] ?? null)
-                    {!! $ads['sidebar'] !!}
-                @endif
                 <div class="card p-5">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-900">Categories</h2>
                     <ul class="mt-3 space-y-2">

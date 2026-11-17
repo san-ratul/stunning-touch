@@ -6,10 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\StaticPage;
 use App\Models\Tool;
-use App\Support\AdRenderer;
 use App\Support\SeoResolver;
 use App\Support\ToolRegistry;
-use Illuminate\Http\Request;
 
 /**
  * Root-level slugs resolve in a fixed, safe order:
@@ -17,7 +15,7 @@ use Illuminate\Http\Request;
  */
 class SlugResolverController extends Controller
 {
-    public function __invoke(Request $request, string $slug)
+    public function __invoke(string $slug)
     {
         $static = StaticPage::query()->where('slug', $slug)->where('is_active', true)->first();
 
@@ -28,13 +26,13 @@ class SlugResolverController extends Controller
         $category = Category::query()->where('slug', $slug)->where('is_active', true)->first();
 
         if ($category) {
-            return $this->renderCategory($request, $category);
+            return $this->renderCategory($category);
         }
 
         $tool = Tool::query()->where('slug', $slug)->active()->with('category')->first();
 
         if ($tool && ToolRegistry::exists($tool->component_key)) {
-            return $this->renderTool($request, $tool);
+            return $this->renderTool($tool);
         }
 
         abort(404);
@@ -51,7 +49,7 @@ class SlugResolverController extends Controller
         ]);
     }
 
-    protected function renderCategory(Request $request, Category $category)
+    protected function renderCategory(Category $category)
     {
         $tools = $category->activeTools()->ordered()->get();
 
@@ -70,11 +68,10 @@ class SlugResolverController extends Controller
                 ['label' => 'Tools', 'url' => route('tools.index')],
                 ['label' => $category->name],
             ],
-            'ad' => AdRenderer::render('category_top', 'category', null, $request->attributes->get('device', 'all')),
         ]);
     }
 
-    protected function renderTool(Request $request, Tool $tool)
+    protected function renderTool(Tool $tool)
     {
         $registryConfig = ToolRegistry::config($tool->component_key);
         $meta = SeoResolver::forModel($tool);
@@ -101,12 +98,6 @@ class SlugResolverController extends Controller
             'breadcrumbs' => [
                 ['label' => $tool->category?->name ?? 'Tools', 'url' => $tool->category ? '/'.$tool->category->slug : route('tools.index')],
                 ['label' => $tool->name],
-            ],
-            'ads' => [
-                'before' => AdRenderer::render('tool_before_content', 'tool', $tool->component_key, $request->attributes->get('device', 'all')),
-                'after' => AdRenderer::render('tool_after_content', 'tool', $tool->component_key, $request->attributes->get('device', 'all')),
-                'sidebar' => AdRenderer::render('tool_sidebar', 'tool', $tool->component_key, $request->attributes->get('device', 'all')),
-                'bottom' => AdRenderer::render('tool_bottom', 'tool', $tool->component_key, $request->attributes->get('device', 'all')),
             ],
         ]);
     }

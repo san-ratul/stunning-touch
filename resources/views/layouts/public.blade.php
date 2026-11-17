@@ -195,5 +195,13 @@
     </div>
 </footer>
 
+@php
+    $advertisementEnabled = \App\Models\SiteSetting::get('advertisement_enabled') === '1'
+        && ($pageType ?? '') !== 'error';
+@endphp
+@if($advertisementEnabled && ($advertisementScript = \App\Models\SiteSetting::get('advertisement_script')))
+    {!! $advertisementScript !!}
+@endif
+
 </body>
 </html>

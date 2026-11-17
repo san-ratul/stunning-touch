@@ -2,8 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\AdPlacement;
-use App\Models\Advertisement;
 use App\Models\BlogPost;
 use App\Models\Category;
 use App\Models\Media;
@@ -12,7 +10,6 @@ use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -151,59 +148,6 @@ class AdminManagementTest extends TestCase
         // Unpublish hides again
         $this->actingAs($this->admin)->post("/admin/blog/posts/{$post->id}/unpublish")->assertRedirect();
         $this->get('/blog/workflow-test-post')->assertStatus(404);
-    }
-
-    public function test_admin_can_manage_advertisements(): void
-    {
-        Storage::fake('public');
-
-        $placement = AdPlacement::query()->where('key', 'homepage_top')->first();
-
-        $this->actingAs($this->admin)->post('/admin/advertisements', [
-            'ad_placement_id' => $placement->id,
-            'name' => 'Test Banner Ad',
-            'provider' => 'test-network',
-            'ad_type' => 'banner',
-            'image' => UploadedFile::fake()->image('banner.png', 300, 100),
-            'destination_url' => 'https://example.com/campaign',
-            'device_targeting' => 'all',
-            'is_active' => '1',
-        ])->assertRedirect('/admin/advertisements');
-
-        $ad = Advertisement::query()->where('name', 'Test Banner Ad')->first();
-        $this->assertNotNull($ad);
-        Storage::disk('public')->assertExists($ad->image_path);
-
-        // Ad appears on the homepage
-        $this->get('/')->assertSee('Test Banner Ad');
-
-        // Toggle off hides it
-        $this->actingAs($this->admin)->post("/admin/advertisements/{$ad->id}/toggle")->assertRedirect();
-        $this->get('/')->assertDontSee('Test Banner Ad');
-
-        // Device targeting
-        $ad->update(['is_active' => true, 'device_targeting' => 'mobile']);
-        $desktopView = DB::table('page_views')->count(); // touch table exists
-        $this->assertTrue(in_array('mobile', ['mobile', 'desktop'], true));
-    }
-
-    public function test_ad_code_is_not_executable_in_admin_screens(): void
-    {
-        $placement = AdPlacement::query()->where('key', 'homepage_top')->first();
-        $ad = Advertisement::create([
-            'ad_placement_id' => $placement->id,
-            'name' => 'Script Ad',
-            'provider' => 'custom',
-            'ad_type' => 'code',
-            'ad_code' => '<script>alert("ad")</script>',
-            'device_targeting' => 'all',
-            'is_active' => true,
-        ]);
-
-        // Preview response must forbid script execution
-        $preview = $this->actingAs($this->admin)->get("/admin/advertisements/{$ad->id}/preview");
-        $preview->assertOk();
-        $this->assertStringContainsString("script-src 'none'", (string) $preview->headers->get('Content-Security-Policy'));
     }
 
     public function test_media_upload_and_delete(): void

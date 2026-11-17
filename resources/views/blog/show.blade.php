@@ -83,10 +83,6 @@
                     </section>
                 @endif
 
-                @if($ads['footer'] ?? null)
-                    {!! $ads['footer'] !!}
-                @endif
-
                 @if($relatedPosts->isNotEmpty())
                     <section class="mt-12" aria-labelledby="related-heading">
                         <h2 id="related-heading" class="text-xl font-bold text-slate-900">Related Articles</h2>
@@ -101,9 +97,6 @@
 
             <aside class="space-y-6">
                 <div class="sticky top-24 space-y-6">
-                    @if($ads['sidebar'] ?? null)
-                        {!! $ads['sidebar'] !!}
-                    @endif
                     <div class="card bg-gradient-to-br from-brand-600/5 to-accent-500/5 p-5">
                         <p class="text-sm font-semibold text-slate-900">Free online tools</p>
                         <p class="mt-1.5 text-sm text-slate-600">Put this article's advice into practice with our browser-based tools.</p>

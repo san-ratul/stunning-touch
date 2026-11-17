@@ -5,13 +5,11 @@ namespace App\Http\Controllers\Public;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Tool;
-use App\Support\AdRenderer;
 use App\Support\SeoResolver;
-use Illuminate\Http\Request;
 
 class HomeController extends Controller
 {
-    public function index(Request $request)
+    public function index()
     {
         $categories = Category::query()
             ->active()
@@ -32,11 +30,6 @@ class HomeController extends Controller
             'featuredTools' => $featuredTools,
             'seo' => $meta,
             'pageType' => 'home',
-            'ads' => [
-                'top' => AdRenderer::render('homepage_top', 'home', null, $request->attributes->get('device', 'all')),
-                'content' => AdRenderer::render('homepage_content', 'home', null, $request->attributes->get('device', 'all')),
-                'bottom' => AdRenderer::render('homepage_bottom', 'home', null, $request->attributes->get('device', 'all')),
-            ],
         ]);
     }
 }

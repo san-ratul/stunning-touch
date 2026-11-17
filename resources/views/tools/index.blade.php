@@ -10,10 +10,6 @@
             across {{ $categories->count() }} categories. Pick a tool and get things done — no sign-up required.
         </p>
 
-        @if($ad)
-            {!! $ad !!}
-        @endif
-
         <div class="mt-10 space-y-12">
             @foreach($categories as $category)
                 <section aria-labelledby="cat-{{ $category->id }}">

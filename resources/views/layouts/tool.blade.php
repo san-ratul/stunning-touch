@@ -20,17 +20,9 @@
                     </div>
                 </header>
 
-                @if($ads['before'] ?? null)
-                    {!! $ads['before'] !!}
-                @endif
-
                 <div class="card p-5 sm:p-8">
                     @yield('tool')
                 </div>
-
-                @if($ads['after'] ?? null)
-                    {!! $ads['after'] !!}
-                @endif
 
                 @if($tool->how_to_steps && count($tool->how_to_steps) > 0)
                     <section class="mt-10" aria-labelledby="how-to">
@@ -77,10 +69,6 @@
                     </section>
                 @endif
 
-                @if($ads['bottom'] ?? null)
-                    {!! $ads['bottom'] !!}
-                @endif
-
                 @if($relatedTools->isNotEmpty())
                     <section class="mt-12" aria-labelledby="related-heading">
                         <h2 id="related-heading" class="text-xl font-bold text-slate-900">Related Tools</h2>
@@ -95,9 +83,6 @@
 
             <aside class="hidden lg:block">
                 <div class="sticky top-24 space-y-6">
-                    @if($ads['sidebar'] ?? null)
-                        {!! $ads['sidebar'] !!}
-                    @endif
                     <div class="card p-5">
                         <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-900">More in {{ $category?->name ?? 'Tools' }}</h2>
                         <ul class="mt-3 space-y-2.5">

@@ -49,11 +49,6 @@ Route::post('/api/smtp/send-test-email', [Public\SmtpTesterController::class, 's
     ->middleware('throttle:smtp-send')
     ->name('smtp.send-test-email');
 
-// Advertisement banner click redirect (real click tracking for internal banners)
-Route::get('/ad-click/{ad}', [Public\AdClickController::class, 'redirect'])
-    ->middleware('throttle:30,1')
-    ->name('ad.click');
-
 // Protected web-cron endpoint for shared hosting (secret in settings)
 Route::get('/run-scheduler/{secret}', function (string $secret) {
     abort_unless(hash_equals((string) config('services.scheduler.secret'), $secret), 404);
@@ -95,14 +90,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('analytics', [Admin\AnalyticsController::class, 'index'])->name('analytics.index');
         Route::get('tool-statistics', [Admin\ToolStatisticsController::class, 'index'])->name('tool-statistics.index');
 
-        Route::get('advertisements', [Admin\AdvertisementController::class, 'index'])->name('advertisements.index');
-        Route::get('advertisements/create', [Admin\AdvertisementController::class, 'create'])->name('advertisements.create');
-        Route::post('advertisements', [Admin\AdvertisementController::class, 'store'])->name('advertisements.store');
-        Route::get('advertisements/{advertisement}/edit', [Admin\AdvertisementController::class, 'edit'])->name('advertisements.edit');
-        Route::put('advertisements/{advertisement}', [Admin\AdvertisementController::class, 'update'])->name('advertisements.update');
-        Route::delete('advertisements/{advertisement}', [Admin\AdvertisementController::class, 'destroy'])->name('advertisements.destroy');
-        Route::post('advertisements/{advertisement}/toggle', [Admin\AdvertisementController::class, 'toggle'])->name('advertisements.toggle');
-        Route::get('advertisements/{advertisement}/preview', [Admin\AdvertisementController::class, 'preview'])->name('advertisements.preview');
+        Route::get('advertisements', [Admin\AdvertisementController::class, 'edit'])->name('advertisements.edit');
+        Route::put('advertisements', [Admin\AdvertisementController::class, 'update'])->name('advertisements.update');
 
         Route::resource('blog/posts', Admin\BlogPostController::class)->names('blog.posts')->except('show');
         Route::get('blog/generate', Admin\ManualBlogGenerationController::class.'@create')->name('blog.generate.create');

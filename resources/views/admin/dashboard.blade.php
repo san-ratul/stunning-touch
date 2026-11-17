@@ -13,7 +13,6 @@
             ['Active Tools', number_format($cards['active_tools']), 'tools', 'from-violet-500/10 to-violet-500/5 text-violet-600'],
             ['Published Posts', number_format($cards['published_posts']), 'blog', 'from-pink-500/10 to-pink-500/5 text-pink-600'],
             ['Scheduled Posts', number_format($cards['scheduled_posts']), 'clock', 'from-orange-500/10 to-orange-500/5 text-orange-600'],
-            ['Active Ads', number_format($cards['active_ads']), 'megaphone', 'from-cyan-500/10 to-cyan-500/5 text-cyan-600'],
             ['Unread Messages', number_format($cards['unread_messages']), 'doc', 'from-red-500/10 to-red-500/5 text-red-600'],
         ] as [$label, $value, $icon, $tone])
             <div class="card p-4 sm:p-5">

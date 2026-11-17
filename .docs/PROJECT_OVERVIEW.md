@@ -15,7 +15,7 @@
 - Homepage: hero, featured tools, category sections, value props, ad slots (top/content/bottom).
 - `/tools` — full tool directory; `/tools/search?q=` — live JSON search.
 - Category pages at root level: `/image-tools`, `/pdf-tools`, `/text-tools`, `/developer-tools`, `/generators` (DB-driven, admin can add more).
-- Tool pages at root level: `/{tool-slug}` — interactive tool, how-to steps, FAQ accordion, related tools, 4 ad slots, sticky sidebar.
+- Tool pages at root level: `/{tool-slug}` — interactive tool, how-to steps, FAQ accordion, related tools, sticky sidebar.
 - Blog: `/blog`, `/blog/{slug}`, `/blog/category/{slug}` with featured post, related posts, reading time, share buttons, related tools.
 - Static pages: `/about`, `/contact` (form + honeypot), `/privacy-policy`, `/terms`, `/disclaimer`.
 - Custom 404/429/5xx error pages consistent with brand design.
@@ -43,7 +43,8 @@
 - `tool_usage_daily` + `analytics_daily` aggregates via `analytics:aggregate`.
 
 ### Advertisements
-- 11 seeded placements; unlimited ads; any provider; code or banner type; page/tool/device targeting; scheduling; priority; enable/disable; impression + internal-click counters; CSP-protected sandboxed preview; 5-minute render cache invalidated on save.
+
+- Single global admin-managed ad script (e.g. Monetag), stored in `site_settings`, rendered once immediately before `</body>` on all public pages when enabled; never on admin/error/API/sitemap/robots responses. Legacy per-placement system retired with tables and rows preserved. See ADVERTISEMENT_MANAGEMENT.md.
 
 ### Blog CMS
 - Posts with HTML content, excerpts, featured images (media library picker), reading time, view counts.
@@ -57,7 +58,7 @@
 - Automation: daily/weekly schedule, preferred time + timezone, category/topic/keyword preferences, per-run dedupe.
 
 ### Admin dashboard (17 modules)
-Dashboard (10 KPI cards + trend chart + top tools + recent activity), Tools, Categories, SEO Manager, Visitor Analytics, Tool Statistics, Advertisements, Blog Posts/Categories/Tags, AI Provider, Automation, Media, Static Pages, Site Settings, Admin Users, Audit Logs, Contact Messages.
+Dashboard (9 KPI cards + trend chart + top tools + recent activity), Tools, Categories, SEO Manager, Visitor Analytics, Tool Statistics, Advertisements, Blog Posts/Categories/Tags, AI Provider, Automation, Media, Static Pages, Site Settings, Admin Users, Audit Logs, Contact Messages.
 
 ## Out of scope (by design)
 - Public user registration, payments, SSH/queue workers/Redis/WebSockets — kept off to satisfy shared-hosting constraints.

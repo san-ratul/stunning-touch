@@ -1,10 +1,6 @@
 @extends('layouts.public')
 
 @section('content')
-    @if($ads['top'])
-        <div class="container-app pt-6">{!! $ads['top'] !!}</div>
-    @endif
-
     {{-- Hero --}}
     <section class="relative overflow-hidden">
         <div class="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
@@ -32,10 +28,6 @@
             </div>
         </div>
     </section>
-
-    @if($ads['content'])
-        <div class="container-app">{!! $ads['content'] !!}</div>
-    @endif
 
     {{-- Featured tools --}}
     @if($featuredTools->isNotEmpty())
@@ -102,8 +94,4 @@
             @endforeach
         </div>
     </section>
-
-    @if($ads['bottom'])
-        <div class="container-app mt-12">{!! $ads['bottom'] !!}</div>
-    @endif
 @endsection

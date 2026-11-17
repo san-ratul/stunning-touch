@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Advertisement;
 use App\Models\AutomationSetting;
 use App\Models\BlogPost;
 use App\Models\ContactMessage;
@@ -48,7 +47,6 @@ class DashboardController extends Controller
                 'active_tools' => Tool::query()->active()->count(),
                 'published_posts' => BlogPost::query()->published()->count(),
                 'scheduled_posts' => BlogPost::query()->where('status', 'scheduled')->count(),
-                'active_ads' => Advertisement::query()->where('is_active', true)->count(),
                 'unread_messages' => ContactMessage::query()->where('is_read', false)->count(),
             ],
             'automationToday' => BlogMetrics::today(),

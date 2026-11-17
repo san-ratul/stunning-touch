@@ -34,11 +34,14 @@ MySQL 8, `utf8mb4_unicode_ci`. All tables created by Laravel migrations (`databa
 ### analytics_daily (unique date)
 `id, date, visitors, page_views, tool_usage, tool_success, tool_failed`
 
-### ad_placements
+### ad_placements (legacy — system retired, tables and rows preserved)
 `id, key (unique: homepage_top, homepage_content, homepage_bottom, category_top, tool_before_content, tool_after_content, tool_sidebar, tool_bottom, blog_content, blog_sidebar, blog_footer), name, description, is_active, timestamps`
 
-### advertisements (indexed placement+active+priority)
+### advertisements (legacy — system retired, tables and rows preserved)
 `id, ad_placement_id FK, name, provider(100), ad_type(code|banner), ad_code(longtext), image_path, destination_url, image_alt, width, height, target_pages(json), target_tools(json), device_targeting(all|desktop|mobile|tablet), starts_at, ends_at, priority, is_active, impressions, clicks, timestamps`
+
+### site_settings — includes the global ad settings
+`advertisement_enabled ('1'|'0')` and `advertisement_script (raw admin snippet)` keys; see ADVERTISEMENT_MANAGEMENT.md
 
 ### blog_categories / blog_tags
 `id, name, slug (unique), description, is_active, timestamps` / `id, name, slug (unique), timestamps`

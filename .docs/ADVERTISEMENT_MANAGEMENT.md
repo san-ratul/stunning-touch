@@ -1,50 +1,49 @@
 # Advertisement Management
 
-A **universal** ad system — not tied to any network. Works with Google AdSense, Monetag, Adsterra, PropellerAds, or plain custom HTML/banner ads.
+A single, global, admin-managed advertisement script (e.g. a Monetag snippet), rendered automatically in the footer of every public page.
 
-## Concepts
+## Admin interface
 
-**Placements** (fixed, seeded, cache-cleared individually):
+Admin → **Advertisement** (`/admin/advertisements`). Exactly two controls plus a save button:
 
-| Key | Location |
-|---|---|
-| `homepage_top` | Above homepage hero |
-| `homepage_content` | Mid-homepage |
-| `homepage_bottom` | Below homepage content |
-| `category_top` | Above category tool grid |
-| `tool_before_content` | Above tool UI |
-| `tool_after_content` | Below tool UI |
-| `tool_sidebar` | Tool page sidebar (desktop) |
-| `tool_bottom` | Below tool content/FAQ |
-| `blog_content` | Blog index top |
-| `blog_sidebar` | Blog sidebars (desktop) |
-| `blog_footer` | Below article content |
+1. **Advertisement Status** — Enabled / Disabled.
+2. **Advertisement Script** — large textarea accepting raw JavaScript/HTML snippets. Complete `<script>` tags can be pasted directly; multiple script tags are supported. The code is stored and rendered exactly as supplied — never escaped, re-encoded or wrapped.
 
-**Advertisements** belong to a placement and support:
-- Provider label (free text: adsense, monetag, adsterra, custom…)
-- Type: **code** (network HTML/JS) or **banner** (uploaded image + destination URL + alt + dimensions)
-- Page-type targeting (empty = all pages)
-- Tool targeting (specific tools via component key; empty = all tools)
-- Device targeting: all / desktop / mobile / tablet
-- Scheduling: starts-at / ends-at (checked at render time)
-- Priority: highest-priority active match wins
-- Enable/disable toggle; deletion
-- Counters: impressions (incremented on each public render) and clicks (internal banner redirect via `/ad-click/{ad}`); ad network stats remain in the network's own dashboard — never fabricated locally.
+Changes take effect immediately (no deployment, no cache-clearing step needed).
+
+## Storage
+
+Two keys in the existing `site_settings` table (key/value), read through `App\Models\SiteSetting`:
+
+- `advertisement_enabled` — `'1'` or `'0'` (default `'0'`).
+- `advertisement_script` — the raw snippet as typed by the admin.
+
+`SiteSetting::set()` invalidates the forever-cached `site_settings` entry on every save, so the very next public page render reflects the change.
+
+## Rendering
+
+- Injected once, immediately before `</body>`, inside `resources/views/layouts/public.blade.php` — the single layout used by all public pages (home, tools, categories, tool pages, blog, static pages).
+- Raw output (`{!! ... !!}`) only at that one location; the snippet must never be HTML-escaped there.
+- Injected **only when** status is enabled **and** the script is non-empty.
+
+## Exclusions (never injected)
+
+- Admin panel pages and admin login (separate layouts that do not extend the public layout).
+- Error responses (`403/404/419/429/500/503` — rendered with `pageType = 'error'` which the layout gates on).
+- JSON/API responses, downloads (they do not render Blade views).
+- `sitemap.xml` and `robots.txt` (standalone responses, no layout).
 
 ## Safety model
-- Ad code is **trusted admin input**: only authenticated, active admins can create/edit it; all forms are CSRF-protected and validated.
-- Ad code renders **only on public placements** — never inside admin screens. The admin preview route serves the ad behind `Content-Security-Policy: script-src 'none'` so browser-side preview cannot execute ad scripts in the admin origin.
-- Rendering is wrapped so any failure (bad code, DB error) can never break page delivery — the slot simply renders empty.
-- Audit log entries record every create/update/delete/toggle with the acting admin.
 
-## Workflow
-1. Admin → Advertisements → “+ Add Advertisement”.
-2. Choose placement, provider, type; paste network code or upload a banner.
-3. (Optional) target pages/tools/devices, set schedule and priority.
-4. Save → placement cache flushes within 5 minutes worst case (immediately flushed on save).
-5. Use “Preview” for a safe visual check; “Enable/Disable” to control delivery.
+- Only authenticated, active admins can reach the edit page; the save endpoint is `PUT /admin/advertisements`, CSRF-protected, validated (`enabled in:1,0`, script `string max:100000`), and re-authorized by the `auth` + `EnsureAdmin` middleware group.
+- Saved ad code is **trusted admin-controlled executable content**: it is never executable in the admin UI (the admin page displays it escaped inside a `<textarea>` only).
+- The stored script is never exposed through unrelated public APIs or responses.
+- Every save writes an `advertisement.updated` audit log entry.
 
-## Notes
-- Multiple ads on one placement: the highest-priority currently-scheduled active ad renders.
-- For AdSense, paste the full `<ins>` + `<script>` snippet into the code field on the desired placements.
-- Impressions/clicks counts are local approximations for internal banners only — they do not replace network reporting.
+## Legacy placement system (retired)
+
+The previous per-placement ad system (11 seeded `ad_placements`, per-ad `advertisements` CRUD, `AdRenderer`, `/ad-click/{ad}` tracking) has been removed from the UI and rendering pipeline. The `ad_placements` and `advertisements` tables, their models and existing rows are **preserved untouched** — no data was deleted or migrated. Any historical ad rows remain in the database but are no longer rendered anywhere.
+
+## Tests
+
+`tests/Feature/AdvertisementTest.php` covers: admin save/edit, guest denial, enabled rendering, disabled non-rendering, admin-page non-execution, single injection before `</body>`, exact snippet preservation, multiple script tags, error/JSON/sitemap/robots exclusions, immediate effect without deployment, cache invalidation, legacy data preservation, validation and audit logging.

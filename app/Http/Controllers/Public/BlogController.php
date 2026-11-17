@@ -5,13 +5,11 @@ namespace App\Http\Controllers\Public;
 use App\Http\Controllers\Controller;
 use App\Models\BlogCategory;
 use App\Models\BlogPost;
-use App\Support\AdRenderer;
 use App\Support\SeoResolver;
-use Illuminate\Http\Request;
 
 class BlogController extends Controller
 {
-    public function index(Request $request)
+    public function index()
     {
         $posts = BlogPost::query()
             ->published()
@@ -29,14 +27,10 @@ class BlogController extends Controller
             'blogCategories' => $categories,
             'seo' => SeoResolver::normalize(null, 'Blog', 'Guides, tips and tutorials about online tools, productivity, SEO and web development from '.SeoResolver::siteName().'.'),
             'pageType' => 'blog_index',
-            'ads' => [
-                'top' => AdRenderer::render('blog_content', 'blog_index', null, $request->attributes->get('device', 'all')),
-                'sidebar' => AdRenderer::render('blog_sidebar', 'blog_index', null, $request->attributes->get('device', 'all')),
-            ],
         ]);
     }
 
-    public function category(Request $request, string $slug)
+    public function category(string $slug)
     {
         $category = BlogCategory::query()->where('slug', $slug)->where('is_active', true)->firstOrFail();
 
@@ -59,13 +53,10 @@ class BlogController extends Controller
                 ['label' => 'Blog', 'url' => route('blog.index')],
                 ['label' => $category->name],
             ],
-            'ads' => [
-                'sidebar' => AdRenderer::render('blog_sidebar', 'blog_category', null, $request->attributes->get('device', 'all')),
-            ],
         ]);
     }
 
-    public function show(Request $request, string $slug)
+    public function show(string $slug)
     {
         $post = BlogPost::query()
             ->where('slug', $slug)
@@ -131,10 +122,6 @@ class BlogController extends Controller
                 ['label' => 'Blog', 'url' => route('blog.index')],
                 ['label' => $post->blogCategory?->name ?? 'Articles', 'url' => $post->blogCategory ? route('blog.category', $post->blogCategory->slug) : null],
                 ['label' => $post->title],
-            ],
-            'ads' => [
-                'sidebar' => AdRenderer::render('blog_sidebar', 'blog_post', null, $request->attributes->get('device', 'all')),
-                'footer' => AdRenderer::render('blog_footer', 'blog_post', null, $request->attributes->get('device', 'all')),
             ],
         ]);
     }
