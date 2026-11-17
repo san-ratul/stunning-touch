@@ -121,7 +121,7 @@ export function init(el) {
         cancelAnimationFrame(previewFrame);
         previewFrame = requestAnimationFrame(() => {
             if (!current) return;
-            const maxSide = 320;
+            const maxSide = 220; // ~2x the rendered size, keeps it crisp on HiDPI
             const scale = Math.min(1, maxSide / cropRect.w, maxSide / cropRect.h);
             previewCanvas.width = Math.max(1, Math.round(cropRect.w * scale));
             previewCanvas.height = Math.max(1, Math.round(cropRect.h * scale));

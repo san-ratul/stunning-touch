@@ -212,7 +212,7 @@ html.dark .theme-toggle:hover {
     /* ---------- Image Resizer crop editor ---------- */
 
     .crop-stage {
-        @apply w-full select-none rounded-xl bg-slate-100 p-2;
+        @apply w-full select-none rounded-xl bg-slate-100 p-1.5;
         touch-action: none;
     }
 
@@ -222,7 +222,8 @@ html.dark .theme-toggle:hover {
     }
 
     .crop-image {
-        @apply block max-h-[60vh] w-auto max-w-full;
+        @apply block w-auto max-w-full;
+        max-height: min(400px, 52vh);
         -webkit-user-drag: none;
     }
 
@@ -280,7 +281,7 @@ html.dark .theme-toggle:hover {
     }
 
     .crop-pos-btn {
-        @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white p-1.5 text-slate-400 shadow-xs transition-colors hover:border-brand-400 hover:text-brand-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+        @apply flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white p-1 text-slate-400 shadow-xs transition-colors hover:border-brand-400 hover:text-brand-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
     }
 
     .crop-pos-btn.is-active {
@@ -288,7 +289,7 @@ html.dark .theme-toggle:hover {
     }
 
     .crop-pos-dot {
-        @apply block h-2.5 w-2.5 rounded-sm bg-current;
+        @apply block h-2 w-2 rounded-sm bg-current;
     }
 
     .crop-pos-btn[data-pos="top-left"] { align-items: flex-start; justify-content: flex-start; }
