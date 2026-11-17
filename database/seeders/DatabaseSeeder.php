@@ -62,6 +62,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Text Tools', 'slug' => 'text-tools', 'icon' => 'text', 'short_description' => 'Count words, convert case and clean up text in one click.', 'description' => '<p>Handy utilities for writers, students, marketers and anyone who works with text daily.</p>'],
             ['name' => 'Developer Tools', 'slug' => 'developer-tools', 'icon' => 'code', 'short_description' => 'Format JSON, encode Base64 and speed up everyday dev tasks.', 'description' => '<p>Lightweight utilities for developers: validate and format JSON, encode and decode Base64 safely with full Unicode support, and more.</p>'],
             ['name' => 'Generators', 'slug' => 'generators', 'icon' => 'sparkles', 'short_description' => 'Generate QR codes, UUIDs and other everyday values.', 'description' => '<p>Create QR codes and UUIDs instantly in your browser with full control over output options.</p>'],
+            ['name' => 'Email Tools', 'slug' => 'email-tools', 'icon' => 'globe', 'short_description' => 'Test SMTP servers and send test emails safely.', 'description' => '<p>Diagnose email delivery problems: verify SMTP connectivity, inspect server capabilities and send a single test email — with strict security protections and no credential storage.</p>'],
         ];
 
         foreach ($categories as $i => $data) {
@@ -303,10 +304,72 @@ class DatabaseSeeder extends Seeder
                     'schema_type' => 'WebApplication',
                 ],
             ],
+            [
+                'category' => 'developer-tools', 'name' => 'Regex Tester', 'slug' => 'regex-tester',
+                'icon' => 'code',
+                'short_description' => 'Test regular expressions live with match highlighting, per-line diagnostics, partial-match detection and a pattern explainer.',
+                'description' => '<p>A live regular-expression playground for developers. Type a pattern (or the <code>/pattern/flags</code> shorthand) and a test string, and the tester instantly shows every match with captured groups, per-line diagnostics and a visual explanation of what your pattern actually does.</p><h2>Built for debugging</h2><p>Lines that fully match are highlighted in yellow; lines that only contain a matching substring are flagged as <em>partial matches</em> in orange, with an explanation of why the full pattern does not match the whole line. Leading/trailing whitespace traps and empty lines are detected automatically.</p><h2>Private and safe</h2><p>Everything runs in your browser — patterns and test text are never sent to a server. Analysis runs in a Web Worker with a hard time budget, so even a catastrophically slow pattern cannot freeze the page.</p>',
+                'how_to_title' => 'How to test a regex',
+                'how_to_steps' => ['Enter your pattern — or paste it in /pattern/flags shorthand and tick the flags you need.', 'Paste your test text into the test string editor.', 'Watch live matches, per-line diagnostics and captured groups update as you type.', 'Open the pattern explanation to see what each token means, and use the flags reference for details.'],
+                'faq' => [
+                    ['q' => 'Is my pattern or test text uploaded anywhere?', 'a' => 'No. All matching, diagnostics and explanations run entirely in your browser. No network requests are made by this tool.'],
+                    ['q' => 'What is a partial match?', 'a' => 'A partial match means a line contains a substring the pattern can match, but the pattern does not match the entire line — useful when testing anchored or whole-line patterns. Partial matches are diagnostic assistance, not full matches.'],
+                    ['q' => 'Why did the tool stop analyzing my pattern?', 'a' => 'Some patterns can backtrack catastrophically. The tester runs each analysis in a Web Worker with a time budget and stops patterns that exceed it, instead of freezing your browser tab.'],
+                ],
+                'seo' => [
+                    'meta_title' => 'Regex Tester Online — Live Match Highlighting & Pattern Explainer',
+                    'meta_description' => 'Test regular expressions online free with live match highlighting, per-line diagnostics, partial-match detection, captured groups and a token-by-token pattern explainer. Runs fully in your browser.',
+                    'focus_keyword' => 'regex tester',
+                    'secondary_keywords' => 'regex tester online, test regex online, regex debugger, regex explanation tool, pattern tester',
+                    'schema_type' => 'WebApplication',
+                ],
+            ],
+            [
+                'category' => 'email-tools', 'name' => 'SMTP Connection & Email Tester', 'slug' => 'smtp-connection-tester',
+                'icon' => 'globe',
+                'short_description' => 'Verify SMTP connectivity — greeting, capabilities, TLS and authentication — and send one real test email to confirm delivery end-to-end.',
+                'description' => '<p>Diagnose email delivery problems in two distinct steps. <strong>Test Connection</strong> verifies your SMTP server answers: DNS resolution, TCP connection, server greeting, EHLO capabilities, STARTTLS/SSL negotiation, latency and optional authentication — without sending any email. <strong>Send Test Email</strong> then sends exactly one real message through your configuration so you can confirm the full path into the recipient mailbox.</p><h2>Built-in protection</h2><p>Destinations are validated against private and internal network ranges, credentials are used only for the operation you trigger (never stored, never logged), and every request is rate-limited. Common ports 25, 465, 587 and 2525 are supported with SSL/TLS, STARTTLS or plain connections.</p><h2>Honest results</h2><p>The tool clearly distinguishes a successful connection, successful authentication and SMTP acceptance of the message — and it never claims inbox delivery, because only the recipient mailbox can confirm that.</p>',
+                'how_to_title' => 'How to test an SMTP server',
+                'how_to_steps' => ['Enter the SMTP host and port (25, 465, 587 or 2525) and choose the encryption your provider uses.', 'Click “Test Connection” to verify connectivity, greeting, capabilities and — optionally — authentication, without sending anything.', 'Switch to “Send Test Email”, enter sender and recipient, and click “Send Test Email” to send one real test message.', 'Check the recipient inbox for the message; the tester reports whether the server accepted it.'],
+                'faq' => [
+                    ['q' => 'Does the connection test send an email?', 'a' => 'No. The connection test only connects, reads the greeting, negotiates encryption and optionally verifies authentication. It never issues MAIL FROM, RCPT TO or DATA, so no email can be sent in that mode.'],
+                    ['q' => 'Are my SMTP credentials stored?', 'a' => 'No. Credentials are submitted only for the operation you trigger, are never saved in the database or your browser storage, never logged, and the password field is cleared after every operation.'],
+                    ['q' => 'The server accepted my message — is it delivered?', 'a' => 'Acceptance means the SMTP server queued the message for delivery. Final inbox placement depends on the receiving server and spam filters; the tester never claims inbox delivery.'],
+                    ['q' => 'Why is my host rejected?', 'a' => 'For security, the tester only connects to public, routable servers. Hostnames resolving to private, loopback, link-local or other reserved network addresses are blocked to prevent misuse.'],
+                ],
+                'seo' => [
+                    'meta_title' => 'SMTP Tester — Test SMTP Connection & Send Test Email Online',
+                    'meta_description' => 'Test your SMTP server online free: verify connection, greeting, capabilities, TLS and authentication, then send one real test email. Secure, rate-limited, credentials never stored.',
+                    'focus_keyword' => 'smtp tester',
+                    'secondary_keywords' => 'test smtp connection online, smtp test tool, send test email smtp, smtp server checker, smtp diagnostics',
+                    'schema_type' => 'WebApplication',
+                ],
+            ],
+            [
+                'category' => 'generators', 'name' => 'Strong Password Generator', 'slug' => 'strong-password-generator',
+                'icon' => 'shield',
+                'short_description' => 'Create cryptographically secure passwords of 8–128 characters with entropy analysis — generated entirely in your browser.',
+                'description' => '<p>Generate strong passwords using your browser’s cryptographic random generator (Web Crypto — never Math.random). Choose a length from 8 to 128 characters, pick the character groups you need, exclude ambiguous look-alike characters, and see the estimated entropy and strength of every password.</p><h2>How strength is estimated</h2><p>Entropy is estimated from the actual character pool and the password length (length × log₂(pool size)), with every selected group guaranteed to be represented. The estimate shows how much work a brute-force attack would take on average — it is an estimate, not a guarantee.</p><h2>Completely private</h2><p>Passwords are generated, displayed and copied entirely inside your browser. They are never sent to a server, never stored in your browser storage and never logged anywhere.</p>',
+                'how_to_title' => 'How to generate a strong password',
+                'how_to_steps' => ['Choose the password length (24 is a sensible default) and tick the character groups you want.', 'Optionally exclude ambiguous characters like 0, O, l and I.', 'Click “Generate” — copy the password with one click, or reveal it to inspect it.', 'Regenerate as often as you like; every password is freshly random.'],
+                'faq' => [
+                    ['q' => 'How random are the generated passwords?', 'a' => 'They are generated with the browser’s Web Crypto API (crypto.getRandomValues) using unbiased selection and a cryptographic shuffle — never Math.random.'],
+                    ['q' => 'What length should I use?', 'a' => '24 characters with all four groups gives far more entropy than typical website requirements. Longer is stronger: entropy grows linearly with length.'],
+                    ['q' => 'Are generated passwords stored anywhere?', 'a' => 'No. They exist only in the page’s memory. Nothing is sent to a server, saved to browser storage, or logged. Clearing the page removes them.'],
+                ],
+                'seo' => [
+                    'meta_title' => 'Strong Password Generator — Secure Random Passwords Online',
+                    'meta_description' => 'Generate strong passwords online free with crypto-secure randomness. 8–128 characters, custom character groups, ambiguous-character exclusion, entropy and strength meter. Fully in your browser.',
+                    'focus_keyword' => 'strong password generator',
+                    'secondary_keywords' => 'secure password generator, random password generator online, crypto password generator, password strength checker',
+                    'schema_type' => 'WebApplication',
+                ],
+            ],
         ];
 
         foreach ($tools as $i => $data) {
             $categorySlug = $data['category'];
+            $seo = $data['seo'] ?? [];
             unset($data['category'], $data['seo']);
 
             $tool = Tool::firstOrCreate(
@@ -327,11 +390,22 @@ class DatabaseSeeder extends Seeder
                 ]
             );
 
-            $seo = $data['seo'] ?? [];
-            $tool->seo()->firstOrCreate([], $seo + [
+            $seoRow = $tool->seo()->firstOrCreate([], $seo + [
                 'robots_index' => true,
                 'robots_follow' => true,
             ]);
+
+            // Backfill SEO fields on rows created by older seeder versions
+            // (those rows exist but may have empty metadata).
+            foreach ($seo as $field => $value) {
+                if (blank($seoRow->{$field})) {
+                    $seoRow->{$field} = $value;
+                }
+            }
+
+            if ($seoRow->isDirty()) {
+                $seoRow->save();
+            }
         }
     }
 

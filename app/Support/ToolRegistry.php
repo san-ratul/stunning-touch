@@ -85,6 +85,24 @@ class ToolRegistry
             'accept' => null,
             'client_side' => true,
         ],
+        'regex-tester' => [
+            'view' => 'tools.regex-tester',
+            'js' => 'tools/regex-tester.js',
+            'accept' => null,
+            'client_side' => true,
+        ],
+        'smtp-connection-tester' => [
+            'view' => 'tools.smtp-connection-tester',
+            'js' => 'tools/smtp-connection-tester.js',
+            'accept' => null,
+            'client_side' => false,
+        ],
+        'strong-password-generator' => [
+            'view' => 'tools.strong-password-generator',
+            'js' => 'tools/strong-password-generator.js',
+            'accept' => null,
+            'client_side' => true,
+        ],
     ];
 
     public static function exists(string $key): bool

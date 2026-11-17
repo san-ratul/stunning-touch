@@ -13,7 +13,7 @@
     ]
   },
   "resources/css/app.css": {
-    "file": "assets/app-DHplJoKW.css",
+    "file": "assets/app-4eA4K4Ui.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -22,7 +22,7 @@
     ]
   },
   "resources/js/app.js": {
-    "file": "assets/app-DjfGAUH4.js",
+    "file": "assets/app-DC5dYEJT.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
@@ -36,9 +36,16 @@
       "resources/js/tools/jpg-to-png.js",
       "resources/js/tools/json-formatter.js",
       "resources/js/tools/merge-pdf.js",
+      "resources/js/tools/password-core.js",
       "resources/js/tools/png-to-webp.js",
       "resources/js/tools/qr-code-generator.js",
+      "resources/js/tools/regex-core.js",
+      "resources/js/tools/regex-explain.js",
+      "resources/js/tools/regex-tester.js",
+      "resources/js/tools/regex-worker.js",
+      "resources/js/tools/smtp-connection-tester.js",
       "resources/js/tools/split-pdf.js",
+      "resources/js/tools/strong-password-generator.js",
       "resources/js/tools/uuid-generator.js",
       "resources/js/tools/word-counter.js"
     ]
@@ -68,7 +75,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/image-compressor.js": {
-    "file": "assets/image-compressor-Cknro3Rm.js",
+    "file": "assets/image-compressor-CNYCRBg-.js",
     "name": "image-compressor",
     "src": "resources/js/tools/image-compressor.js",
     "isDynamicEntry": true,
@@ -79,7 +86,7 @@
     ]
   },
   "resources/js/tools/image-resizer.js": {
-    "file": "assets/image-resizer-DcUSrBQK.js",
+    "file": "assets/image-resizer-ERuexLWJ.js",
     "name": "image-resizer",
     "src": "resources/js/tools/image-resizer.js",
     "isDynamicEntry": true,
@@ -90,7 +97,7 @@
     ]
   },
   "resources/js/tools/image-tool.js": {
-    "file": "assets/image-tool-DlrVtoUZ.js",
+    "file": "assets/image-tool-rfNphe6D.js",
     "name": "image-tool",
     "src": "resources/js/tools/image-tool.js",
     "isDynamicEntry": true,
@@ -100,7 +107,7 @@
     ]
   },
   "resources/js/tools/jpg-to-png.js": {
-    "file": "assets/jpg-to-png-Cro_FRQh.js",
+    "file": "assets/jpg-to-png-DabMVWLo.js",
     "name": "jpg-to-png",
     "src": "resources/js/tools/jpg-to-png.js",
     "isDynamicEntry": true,
@@ -117,7 +124,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/merge-pdf.js": {
-    "file": "assets/merge-pdf-DwEkMN9I.js",
+    "file": "assets/merge-pdf-BE-XrHLl.js",
     "name": "merge-pdf",
     "src": "resources/js/tools/merge-pdf.js",
     "isDynamicEntry": true,
@@ -129,8 +136,14 @@
       "node_modules/pdf-lib/es/index.js"
     ]
   },
+  "resources/js/tools/password-core.js": {
+    "file": "assets/password-core-DfPh-Ybw.js",
+    "name": "password-core",
+    "src": "resources/js/tools/password-core.js",
+    "isDynamicEntry": true
+  },
   "resources/js/tools/png-to-webp.js": {
-    "file": "assets/png-to-webp-CuGdSLcG.js",
+    "file": "assets/png-to-webp-D1dC62lb.js",
     "name": "png-to-webp",
     "src": "resources/js/tools/png-to-webp.js",
     "isDynamicEntry": true,
@@ -149,8 +162,46 @@
       "__commonjsHelpers-CqkleIqs.js"
     ]
   },
+  "resources/js/tools/regex-core.js": {
+    "file": "assets/regex-core-BrLUJnl1.js",
+    "name": "regex-core",
+    "src": "resources/js/tools/regex-core.js",
+    "isDynamicEntry": true
+  },
+  "resources/js/tools/regex-explain.js": {
+    "file": "assets/regex-explain-CNELZv5z.js",
+    "name": "regex-explain",
+    "src": "resources/js/tools/regex-explain.js",
+    "isDynamicEntry": true
+  },
+  "resources/js/tools/regex-tester.js": {
+    "file": "assets/regex-tester-DGfQTGV8.js",
+    "name": "regex-tester",
+    "src": "resources/js/tools/regex-tester.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/tools/helpers.js",
+      "resources/js/tools/regex-core.js",
+      "resources/js/tools/regex-explain.js"
+    ]
+  },
+  "resources/js/tools/regex-worker.js": {
+    "file": "assets/regex-worker-CnMHFtOA.js",
+    "name": "regex-worker",
+    "src": "resources/js/tools/regex-worker.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/tools/regex-core.js"
+    ]
+  },
+  "resources/js/tools/smtp-connection-tester.js": {
+    "file": "assets/smtp-connection-tester-BZ9j_RzH.js",
+    "name": "smtp-connection-tester",
+    "src": "resources/js/tools/smtp-connection-tester.js",
+    "isDynamicEntry": true
+  },
   "resources/js/tools/split-pdf.js": {
-    "file": "assets/split-pdf-CUHQ7FT_.js",
+    "file": "assets/split-pdf-CXa922_M.js",
     "name": "split-pdf",
     "src": "resources/js/tools/split-pdf.js",
     "isDynamicEntry": true,
@@ -161,6 +212,15 @@
     "dynamicImports": [
       "node_modules/pdf-lib/es/index.js",
       "node_modules/pdf-lib/es/index.js"
+    ]
+  },
+  "resources/js/tools/strong-password-generator.js": {
+    "file": "assets/strong-password-generator-HpyjKe1b.js",
+    "name": "strong-password-generator",
+    "src": "resources/js/tools/strong-password-generator.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/tools/password-core.js"
     ]
   },
   "resources/js/tools/uuid-generator.js": {

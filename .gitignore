@@ -58,6 +58,9 @@ Thumbs.db
 /deploy/package/
 /deploy/INSTALL-KEY.local.txt
 
+# Per-task deployment packages (regenerated on demand)
+/deployment/
+
 # Editor / OS extras
 *.swp
 *~

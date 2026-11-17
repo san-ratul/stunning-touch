@@ -27,7 +27,7 @@ class SeederTest extends TestCase
         $this->seed(DatabaseSeeder::class);
 
         $this->assertSame(1, User::query()->where('email', 'admin@stunningtouch.com')->count());
-        $this->assertSame(12, Tool::query()->count());
+        $this->assertSame(15, Tool::query()->count());
         $this->assertSame(2, BlogPost::query()->count(), 'Sample posts must not be duplicated on re-seed.');
     }
 

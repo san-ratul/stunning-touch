@@ -18,6 +18,21 @@ class SeoTest extends TestCase
         $this->seed(DatabaseSeeder::class);
     }
 
+    public function test_tool_seo_meta_is_seeded_with_unique_titles(): void
+    {
+        $rows = Tool::query()->with('seo')->get();
+
+        $this->assertSame(15, $rows->count());
+
+        foreach ($rows as $tool) {
+            $this->assertNotNull($tool->seo, "Tool {$tool->slug} must have an SEO row.");
+            $this->assertNotNull($tool->seo->meta_title, "Tool {$tool->slug} must have a meta title.");
+            $this->assertNotNull($tool->seo->meta_description, "Tool {$tool->slug} must have a meta description.");
+        }
+
+        $this->assertSame(15, $rows->pluck('seo.meta_title')->unique()->count());
+    }
+
     public function test_sitemap_contains_core_urls(): void
     {
         $post = BlogPost::create([

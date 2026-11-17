@@ -41,6 +41,14 @@ Route::post('/api/visitor-locale', [Public\VisitorLocaleController::class, 'stor
     ->middleware('throttle:10,1')
     ->name('visitor-locale.store');
 
+// SMTP Connection & Email Tester (server-side tool; rate-limited, CSRF-protected)
+Route::post('/api/smtp/test-connection', [Public\SmtpTesterController::class, 'testConnection'])
+    ->middleware('throttle:smtp-test')
+    ->name('smtp.test-connection');
+Route::post('/api/smtp/send-test-email', [Public\SmtpTesterController::class, 'sendTestEmail'])
+    ->middleware('throttle:smtp-send')
+    ->name('smtp.send-test-email');
+
 // Advertisement banner click redirect (real click tracking for internal banners)
 Route::get('/ad-click/{ad}', [Public\AdClickController::class, 'redirect'])
     ->middleware('throttle:30,1')

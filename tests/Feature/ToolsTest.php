@@ -18,11 +18,11 @@ class ToolsTest extends TestCase
         $this->seed(DatabaseSeeder::class);
     }
 
-    public function test_all_twelve_tool_routes_render_with_unique_seo_titles(): void
+    public function test_all_fifteen_tool_routes_render_with_unique_seo_titles(): void
     {
         $tools = Tool::query()->active()->get();
 
-        $this->assertCount(12, $tools);
+        $this->assertCount(15, $tools);
 
         $titles = [];
 
@@ -40,7 +40,7 @@ class ToolsTest extends TestCase
             $response->assertSee('name="description"', false);
         }
 
-        $this->assertCount(12, array_unique($titles), 'Tool meta titles must be unique.');
+        $this->assertCount(15, array_unique($titles), 'Tool meta titles must be unique.');
     }
 
     public function test_inactive_tool_returns_404(): void
@@ -59,11 +59,14 @@ class ToolsTest extends TestCase
         $this->get('/word-counter')->assertStatus(404);
     }
 
-    public function test_registry_contains_all_twelve_component_keys(): void
+    public function test_registry_contains_all_fifteen_component_keys(): void
     {
-        $this->assertCount(12, ToolRegistry::keys());
+        $this->assertCount(15, ToolRegistry::keys());
         $this->assertTrue(ToolRegistry::exists('image-compressor'));
         $this->assertTrue(ToolRegistry::exists('uuid-generator'));
+        $this->assertTrue(ToolRegistry::exists('regex-tester'));
+        $this->assertTrue(ToolRegistry::exists('smtp-connection-tester'));
+        $this->assertTrue(ToolRegistry::exists('strong-password-generator'));
         $this->assertFalse(ToolRegistry::exists('not-a-real-component'));
     }
 

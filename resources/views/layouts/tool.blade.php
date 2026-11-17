@@ -108,10 +108,17 @@
                             @endforeach
                         </ul>
                     </div>
-                    <div class="card bg-gradient-to-br from-brand-600/5 to-accent-500/5 p-5">
-                        <p class="text-sm font-semibold text-slate-900">🔒 Private processing</p>
-                        <p class="mt-1.5 text-sm leading-relaxed text-slate-600">All processing happens locally in your browser. Your files never leave your device.</p>
-                    </div>
+                    @if($registryConfig['client_side'] ?? true)
+                        <div class="card bg-gradient-to-br from-brand-600/5 to-accent-500/5 p-5">
+                            <p class="text-sm font-semibold text-slate-900">🔒 Private processing</p>
+                            <p class="mt-1.5 text-sm leading-relaxed text-slate-600">All processing happens locally in your browser. Your files never leave your device.</p>
+                        </div>
+                    @else
+                        <div class="card bg-gradient-to-br from-brand-600/5 to-accent-500/5 p-5">
+                            <p class="text-sm font-semibold text-slate-900">🛡️ Safe by design</p>
+                            <p class="mt-1.5 text-sm leading-relaxed text-slate-600">Requests are strictly validated, rate-limited, and credentials are never stored or logged.</p>
+                        </div>
+                    @endif
                 </div>
             </aside>
         </div>
