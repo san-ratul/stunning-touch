@@ -2,8 +2,11 @@
 
 namespace App\Support;
 
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\Process;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Console\Exception\CommandNotFoundException;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * Secure, admin-only Artisan Command Runner engine.
@@ -11,20 +14,23 @@ use Symfony\Component\Process\Process;
  * Security model:
  * - Strict server-side allowlist of commands with per-command argument
  *   schemas. Anything not explicitly allowed is rejected.
- * - No shell is ever involved: the command is executed as a process array
- *   [PHP_BINARY, <absolute artisan path>, name, options...] with
- *   Symfony Process and an explicit working directory.
- * - A hard timeout terminates the process; output is size-capped; raw
- *   input never reaches any shell or eval.
- * - If the hosting environment cannot safely spawn processes (e.g.
- *   proc_open disabled), environmentProblem() reports the exact missing
- *   capability and execution refuses to run — there is no unsafe fallback.
+ * - Commands execute IN-PROCESS through Laravel's native console kernel
+ *   (Artisan::call with a BufferedOutput) — no shell, no external process
+ *   functions, no PHP CLI spawning. This keeps the runner operational on
+ *   shared hosting that disables process-spawning PHP functions.
+ * - Output is size-capped; raw input never reaches any shell or eval.
+ * - A cache lock prevents concurrent executions inside the same request
+ *   worker; the web request itself remains bounded by the hosting PHP
+ *   execution limits (in-process execution cannot be force-terminated).
+ * - If a specific command cannot run in the current environment, its
+ *   failure is reported without affecting the other commands.
  *
  * Authorization is NOT part of this class: callers must enforce the
  * artisan-runner.access gate before touching it.
  */
 class ArtisanRunner
 {
+    /** Lock TTL: bounds how long a busy lock is honored. */
     public const TIMEOUT_SECONDS = 120;
 
     public const MAX_OUTPUT_BYTES = 102400;
@@ -199,85 +205,172 @@ class ArtisanRunner
      */
     protected function execute(array $argv): array
     {
-        $problem = $this->environmentProblem();
+        $command = array_shift($argv);
+        $parameters = $this->argvToParameters($argv);
 
-        if ($problem !== null) {
-            return $this->blockedResult($problem);
-        }
-
-        $process = new Process(
-            [PHP_BINARY, base_path('artisan'), ...$argv],
-            base_path(),
-            null,
-            null,
-            self::TIMEOUT_SECONDS,
-        );
-
-        $started = microtime(true);
+        // Prevent concurrent executions on the same request worker.
+        $lock = null;
 
         try {
-            $process->run();
-        } catch (ProcessTimedOutException) {
+            $lock = Cache::lock('artisan-runner.execution', self::TIMEOUT_SECONDS);
+            $acquired = $lock->get();
+        } catch (\Throwable) {
+            // If the cache store cannot provide locks, proceed without one:
+            // concurrency protection is a nicety, not a security control.
+            $lock = null;
+            $acquired = true;
+        }
+
+        if (! $acquired) {
             return [
                 'ok' => false,
-                'status' => 'timeout',
-                'message' => 'The command was terminated after '.self::TIMEOUT_SECONDS.' seconds.',
+                'status' => 'busy',
+                'message' => 'Another command is currently running. Wait for it to finish and try again.',
                 'exit_code' => null,
-                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-                'stdout' => $this->truncate($process->getOutput()),
+                'duration_ms' => 0,
+                'stdout' => '',
                 'stderr' => '',
-                'output_truncated' => strlen($process->getOutput()) > self::MAX_OUTPUT_BYTES,
+                'output_truncated' => false,
             ];
+        }
+
+        $started = microtime(true);
+        $output = new BufferedOutput;
+
+        try {
+            $exitCode = $this->runArtisan($command, $parameters, $output);
         } catch (\Throwable $exception) {
             $this->logFailure($exception);
 
-            return $this->blockedResult('The command could not be started. '.static::capabilityHint());
+            // Never forward raw exception details to the browser. A few
+            // commands internally need process spawning (e.g. `about`
+            // reads the composer version); report that per-command without
+            // disabling the other approved commands.
+            $raw = $output->fetch();
+            $message = $exception instanceof CommandNotFoundException
+                ? 'This command is not registered in the application console.'
+                : (str_contains($exception->getMessage(), 'proc_open')
+                    ? 'This command cannot run on this server: it requires process spawning (proc_open), which is disabled by the hosting provider. Other approved commands still work.'
+                    : 'The command failed with an unexpected error. Details were logged for the administrator.');
+
+            return [
+                'ok' => false,
+                'status' => 'failed',
+                'message' => $message,
+                'exit_code' => 1,
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'stdout' => $this->truncate($raw),
+                'stderr' => '',
+                'output_truncated' => strlen($raw) > self::MAX_OUTPUT_BYTES,
+            ];
+        } finally {
+            if ($lock !== null) {
+                optional($lock)->release();
+            }
         }
 
+        $raw = $output->fetch();
+        $successful = $exitCode === 0;
+
         return [
-            'ok' => $process->isSuccessful(),
-            'status' => $process->isSuccessful() ? 'success' : 'failed',
-            'message' => $process->isSuccessful()
+            'ok' => $successful,
+            'status' => $successful ? 'success' : 'failed',
+            'message' => $successful
                 ? 'Command completed successfully.'
                 : 'Command finished with a non-zero exit code — see the output below.',
-            'exit_code' => $process->getExitCode(),
+            'exit_code' => $exitCode,
             'duration_ms' => (int) round((microtime(true) - $started) * 1000),
-            'stdout' => $this->truncate($process->getOutput()),
-            'stderr' => $this->truncate($process->getErrorOutput()),
-            'output_truncated' => strlen($process->getOutput().$process->getErrorOutput()) > self::MAX_OUTPUT_BYTES,
+            'stdout' => $this->truncate($raw),
+            'stderr' => '',
+            'output_truncated' => strlen($raw) > self::MAX_OUTPUT_BYTES,
         ];
     }
 
     /**
-     * Diagnose the hosting environment. Returns null when safe process
-     * execution is available, or an administrator-facing explanation of
-     * the exact missing capability.
+     * Run the registered Artisan command in-process. Overridden in tests
+     * to simulate command failures without executing anything destructive.
+     *
+     * Note: some console commands mutate the shared router's middleware
+     * registry (e.g. route:list flushes middleware groups to filter the
+     * display). Because we run inside a live HTTP request, the registry
+     * is snapshotted and restored so the request lifecycle stays intact.
+     *
+     * @param  array<string, mixed>  $parameters
+     */
+    protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
+    {
+        $router = app('router');
+        $aliases = $router->getMiddleware();
+        $groups = $router->getMiddlewareGroups();
+
+        $exitCode = Artisan::call($command, $parameters, $output);
+
+        $this->restoreMiddlewareRegistry($router, $aliases, $groups);
+
+        return $exitCode;
+    }
+
+    /**
+     * Restore the router middleware registry if a command altered it.
+     *
+     * @param  Router  $router
+     * @param  array<string, mixed>  $aliases
+     * @param  array<string, list<string>>  $groups
+     */
+    protected function restoreMiddlewareRegistry($router, array $aliases, array $groups): void
+    {
+        if ($router->getMiddleware() !== $aliases) {
+            foreach ($aliases as $name => $target) {
+                $router->aliasMiddleware($name, $target);
+            }
+        }
+
+        if ($router->getMiddlewareGroups() !== $groups) {
+            $router->flushMiddlewareGroups();
+
+            foreach ($groups as $name => $classes) {
+                $router->middlewareGroup($name, $classes);
+            }
+        }
+    }
+
+    /**
+     * Convert schema-validated argv pieces to Artisan call parameters.
+     *
+     * @param  list<string>  $argv
+     * @return array<string, mixed>
+     */
+    protected function argvToParameters(array $argv): array
+    {
+        $parameters = [];
+
+        foreach ($argv as $piece) {
+            if (str_starts_with($piece, '--')) {
+                $body = substr($piece, 2);
+
+                if (str_contains($body, '=')) {
+                    [$name, $value] = explode('=', $body, 2);
+                    $parameters['--'.$name] = $value;
+                } else {
+                    $parameters['--'.$body] = true;
+                }
+            }
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * Diagnose the hosting environment for the runner UI.
+     *
+     * In-process execution runs inside the already-bootstrapped Laravel
+     * application and has no external-process requirements, so this
+     * reports no problem. Individual command failures (if a hosting
+     * capability a specific command needs is unavailable) are reported
+     * per-command in the execution result without disabling the runner.
      */
     public function environmentProblem(): ?string
     {
-        if (! function_exists('proc_open')) {
-            return 'The proc_open() PHP function is disabled on this server, so commands cannot be started safely. This is a hosting restriction — contact the hosting provider or run commands manually.';
-        }
-
-        if (PHP_BINARY === '') {
-            return 'The PHP CLI binary path is not available, so Artisan cannot be executed.';
-        }
-
-        if (! is_file(base_path('artisan'))) {
-            return 'The Artisan entry point (artisan) was not found in the project root.';
-        }
-
-        try {
-            $probe = new Process([PHP_BINARY, '-v'], base_path(), null, null, 10);
-            $probe->run();
-        } catch (\Throwable $exception) {
-            return 'PHP process execution is not available on this server ('.static::capabilityHint().').';
-        }
-
-        if (! $probe->isSuccessful()) {
-            return 'The PHP CLI binary could not be executed on this server.';
-        }
-
         return null;
     }
 
@@ -394,29 +487,11 @@ class ArtisanRunner
         return substr($output, 0, self::MAX_OUTPUT_BYTES)."\n… [output truncated at ".self::MAX_OUTPUT_BYTES.' bytes]';
     }
 
-    protected function blockedResult(string $message): array
-    {
-        return [
-            'ok' => false,
-            'status' => 'blocked',
-            'message' => $message,
-            'exit_code' => null,
-            'duration_ms' => 0,
-            'stdout' => '',
-            'stderr' => '',
-            'output_truncated' => false,
-        ];
-    }
-
-    protected static function capabilityHint(): string
-    {
-        return 'this usually means proc_open is disabled or the PHP CLI is restricted by the hosting provider';
-    }
-
     protected function logFailure(\Throwable $exception): void
     {
-        logger()->warning('Artisan runner could not start a process', [
+        logger()->warning('Artisan runner command raised an exception', [
             'detail' => $exception->getMessage(),
+            'class' => $exception::class,
         ]);
     }
 }

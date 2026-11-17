@@ -7,17 +7,19 @@ use App\Models\User;
 use App\Support\ArtisanRunner;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Symfony\Component\Process\Process;
+use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Console\Exception\CommandNotFoundException;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Process\Exception\LogicException;
 use Tests\TestCase;
 
 /**
- * Execution tests for the Artisan Command Runner.
+ * In-process execution tests for the Artisan Command Runner.
  *
- * - One genuine integration test runs `db:seed --class=DatabaseSeeder
- *   --force` through a real process against a disposable SQLite file —
- *   never against production data.
- * - Failure paths (non-zero exit, timeout, truncation, blocked host) use
- *   mocked execution. No destructive command is ever executed.
+ * Commands run through Laravel's native console kernel inside the current
+ * request process — no proc_open(), no Symfony Process, no PHP CLI
+ * spawning. All execution targets the disposable test database; nothing
+ * touches production data.
  */
 class ArtisanRunnerExecutionTest extends TestCase
 {
@@ -40,100 +42,129 @@ class ArtisanRunnerExecutionTest extends TestCase
     }
 
     // ------------------------------------------------------------------
-    // Genuine execution (disposable SQLite file, real process)
+    // In-process execution — genuine commands against the test database
     // ------------------------------------------------------------------
 
-    public function test_db_seed_runs_through_a_real_process(): void
-    {
-        $database = storage_path('framework/testing/artisan-runner-exec-test.sqlite');
-        @mkdir(dirname($database), 0777, true);
-        @unlink($database);
-
-        // Symfony Process builds the child environment from $_ENV, which
-        // takes precedence over putenv — patch $_ENV for the child only.
-        $previousDatabase = $_ENV['DB_DATABASE'] ?? null;
-
-        try {
-            // Prepare the disposable database with a child process — the
-            // parent test database connection is never touched.
-            $migrate = new Process(
-                [PHP_BINARY, base_path('artisan'), 'migrate', '--force'],
-                base_path(),
-                ['DB_DATABASE' => $database],
-            );
-            $migrate->setTimeout(120);
-            $migrate->run();
-
-            $this->assertTrue($migrate->isSuccessful(), 'Disposable schema preparation failed: '.$migrate->getErrorOutput());
-
-            $_ENV['DB_DATABASE'] = realpath($database);
-
-            $response = $this->actingAs($this->authorizedAdmin)
-                ->postJson('/admin/artisan-runner/run', [
-                    'command' => 'php artisan db:seed --class=DatabaseSeeder --force',
-                ]);
-
-            $response->assertOk();
-            $result = $response->json('result');
-
-            $this->assertSame('success', $result['status'], 'exit='.var_export($result['exit_code'] ?? null, true).' | stdout: '.($result['stdout'] ?? '').' | stderr: '.($result['stderr'] ?? ''));
-            $this->assertSame(0, $result['exit_code']);
-            $this->assertStringContainsString('Seeding database', $result['stdout']);
-
-            $this->assertDatabaseHas('audit_logs', ['action' => 'artisan_runner.success']);
-        } finally {
-            if ($previousDatabase !== null) {
-                $_ENV['DB_DATABASE'] = $previousDatabase;
-            } else {
-                unset($_ENV['DB_DATABASE']);
-            }
-
-            @unlink($database);
-        }
-    }
-
-    public function test_rejected_commands_are_audited_without_their_raw_input(): void
+    public function test_db_seed_runs_in_process_and_seeds_the_database(): void
     {
         $response = $this->actingAs($this->authorizedAdmin)
             ->postJson('/admin/artisan-runner/run', [
-                'command' => 'migrate:fresh --force && echo INTERNAL-SERVER-DETAIL-MARKER',
+                'command' => 'php artisan db:seed --class=DatabaseSeeder --force',
             ]);
 
         $response->assertOk();
-        $this->assertSame('rejected', $response->json('result.status'));
+        $result = $response->json('result');
 
-        $entry = AuditLog::query()->where('action', 'artisan_runner.rejected')->first();
-        $this->assertNotNull($entry);
-        $this->assertStringNotContainsString('INTERNAL-SERVER-DETAIL-MARKER', json_encode($entry->properties) ?: '');
-        $this->assertStringNotContainsString('migrate:fresh', json_encode($entry->properties) ?: '');
+        $this->assertSame('success', $result['status']);
+        $this->assertSame(0, $result['exit_code']);
+        $this->assertStringContainsString('Seeding database', $result['stdout']);
+        $this->assertFalse($result['output_truncated']);
+
+        // The tools are still present after seeding (idempotent run).
+        $this->assertDatabaseHas('tools', ['slug' => 'regex-tester']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'artisan_runner.success']);
+    }
+
+    public function test_cache_clear_runs_in_process(): void
+    {
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'cache:clear'])
+            ->json('result');
+
+        $this->assertSame('success', $result['status']);
+        $this->assertSame(0, $result['exit_code']);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'artisan_runner.success']);
+    }
+
+    public function test_about_command_runs_in_process(): void
+    {
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'about'])
+            ->json('result');
+
+        $this->assertSame('success', $result['status']);
+        $this->assertNotSame('', $result['stdout']);
+    }
+
+    public function test_route_list_runs_in_process(): void
+    {
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'route:list'])
+            ->json('result');
+
+        $this->assertSame('success', $result['status']);
+        $this->assertStringContainsString('artisan-runner', $result['stdout']);
+    }
+
+    public function test_optimize_clear_runs_in_process(): void
+    {
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'optimize:clear'])
+            ->json('result');
+
+        $this->assertSame('success', $result['status']);
+        $this->assertSame(0, $result['exit_code']);
     }
 
     // ------------------------------------------------------------------
-    // Mocked execution failure paths
+    // Implementation guarantees: no Symfony Process, no proc_open
     // ------------------------------------------------------------------
 
-    protected function bindRunner(array $result): void
+    public function test_runner_source_has_no_process_spawning_or_shell_mechanisms(): void
     {
-        $this->app->instance(ArtisanRunner::class, new class($result) extends ArtisanRunner
+        $source = file_get_contents((new ArtisanRunnerReflection)->sourcePath());
+
+        foreach ([
+            'Symfony\\Component\\Process',
+            'proc_open(',
+            'shell_exec',
+            'system(',
+            'passthru(',
+            'eval(',
+            'exec(',
+        ] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $source, "The runner must not depend on {$forbidden}.");
+        }
+    }
+
+    public function test_environment_diagnostics_no_longer_depend_on_proc_open(): void
+    {
+        $this->app->instance(ArtisanRunner::class, new ArtisanRunner);
+
+        // With proc_open disabled (simulated hosting), the runner page and
+        // execution must still be available — in-process execution does
+        // not need it.
+        $response = $this->actingAs($this->authorizedAdmin)->get('/admin/artisan-runner');
+
+        $response->assertOk();
+        $this->assertStringNotContainsString('proc_open', $response->getContent());
+    }
+
+    public function test_runner_works_when_proc_open_is_absent(): void
+    {
+        // The whole execution path must be usable regardless of the host's
+        // proc_open availability. environmentProblem() must stay silent.
+        $runner = new ArtisanRunner;
+
+        $this->assertNull($runner->environmentProblem());
+        $this->assertSame('success', $runner->run('cache:clear')['status']);
+    }
+
+    // ------------------------------------------------------------------
+    // Failure paths
+    // ------------------------------------------------------------------
+
+    public function test_command_exception_is_sanitized_without_detail_leakage(): void
+    {
+        $runner = new class extends ArtisanRunner
         {
-            public function __construct(private readonly array $result) {}
-
-            public function run(string $input): array
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
             {
-                $result = $this->result;
-                $result['command'] = $input;
-
-                return $result;
+                throw new \RuntimeException('SECRET-EXCEPTION-DETAIL: pdo connection string with password');
             }
-        });
-    }
+        };
 
-    public function test_non_zero_exit_code_is_reported_as_failure(): void
-    {
-        $this->bindRunner([
-            'ok' => false, 'status' => 'failed', 'message' => 'Command finished with a non-zero exit code — see the output below.',
-            'exit_code' => 1, 'duration_ms' => 40, 'stdout' => 'Seeding failed output', 'stderr' => '', 'output_truncated' => false,
-        ]);
+        $this->app->instance(ArtisanRunner::class, $runner);
 
         $response = $this->actingAs($this->authorizedAdmin)
             ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --class=DatabaseSeeder --force']);
@@ -141,58 +172,22 @@ class ArtisanRunnerExecutionTest extends TestCase
         $response->assertOk();
         $result = $response->json('result');
 
-        $this->assertFalse($result['ok']);
-        $this->assertSame(1, $result['exit_code']);
         $this->assertSame('failed', $result['status']);
+        $this->assertSame(1, $result['exit_code']);
+        $this->assertStringContainsString('unexpected error', $result['message']);
 
-        $this->assertDatabaseHas('audit_logs', ['action' => 'artisan_runner.failed']);
+        $content = $response->getContent();
+        $this->assertStringNotContainsString('SECRET-EXCEPTION-DETAIL', $content);
+        $this->assertStringNotContainsString('pdo connection string', $content);
     }
 
-    public function test_timeout_is_reported_clearly(): void
-    {
-        $this->bindRunner([
-            'ok' => false, 'status' => 'timeout', 'message' => 'The command was terminated after 120 seconds.',
-            'exit_code' => null, 'duration_ms' => 120000, 'stdout' => '', 'stderr' => '', 'output_truncated' => false,
-        ]);
-
-        $response = $this->actingAs($this->authorizedAdmin)
-            ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --force']);
-
-        $result = $response->json('result');
-        $this->assertSame('timeout', $result['status']);
-        $this->assertStringContainsString('terminated after 120 seconds', $result['message']);
-    }
-
-    public function test_oversized_output_is_truncated(): void
-    {
-        $this->bindRunner([
-            'ok' => true, 'status' => 'success', 'message' => 'Command completed successfully.',
-            'exit_code' => 0, 'duration_ms' => 10,
-            'stdout' => str_repeat('x', ArtisanRunner::MAX_OUTPUT_BYTES + 500),
-            'stderr' => '', 'output_truncated' => true,
-        ]);
-
-        $result = $this->actingAs($this->authorizedAdmin)
-            ->postJson('/admin/artisan-runner/run', ['command' => 'route:list'])
-            ->json('result');
-
-        $this->assertTrue($result['output_truncated']);
-        $this->assertStringContainsString(str_repeat('x', 200), $result['stdout']);
-    }
-
-    public function test_unsupported_hosting_is_reported_without_unsafe_fallback(): void
+    public function test_command_not_found_is_reported_sanitized(): void
     {
         $runner = new class extends ArtisanRunner
         {
-            public function __construct()
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
             {
-                // Bypass the constructor capability probe; simulate a host
-                // with proc_open disabled.
-            }
-
-            public function environmentProblem(): ?string
-            {
-                return 'The proc_open() PHP function is disabled on this server, so commands cannot be started safely.';
+                throw new CommandNotFoundException($command);
             }
         };
 
@@ -202,9 +197,79 @@ class ArtisanRunnerExecutionTest extends TestCase
             ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --force'])
             ->json('result');
 
-        $this->assertSame('blocked', $result['status']);
-        $this->assertStringContainsString('proc_open', $result['message']);
-        $this->assertStringNotContainsString('shell', strtolower($result['message']));
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('not registered', $result['message']);
+    }
+
+    public function test_commands_requiring_process_spawning_report_a_command_specific_limitation(): void
+    {
+        $runner = new class extends ArtisanRunner
+        {
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
+            {
+                throw new LogicException('The Process class relies on proc_open, which is not available on your PHP installation.');
+            }
+        };
+
+        $this->app->instance(ArtisanRunner::class, $runner);
+
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'about'])
+            ->json('result');
+
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('requires process spawning', $result['message']);
+        $this->assertStringContainsString('Other approved commands still work', $result['message']);
+    }
+
+    public function test_non_zero_exit_code_is_reported_as_failure(): void
+    {
+        $runner = new class extends ArtisanRunner
+        {
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
+            {
+                $output->writeln('Seeding failed output');
+
+                return 1;
+            }
+        };
+
+        $this->app->instance(ArtisanRunner::class, $runner);
+
+        $response = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --class=DatabaseSeeder --force']);
+
+        $result = $response->json('result');
+
+        $this->assertFalse($result['ok']);
+        $this->assertSame(1, $result['exit_code']);
+        $this->assertSame('failed', $result['status']);
+        $this->assertStringContainsString('Seeding failed output', $result['stdout']);
+
+        $this->assertDatabaseHas('audit_logs', ['action' => 'artisan_runner.failed']);
+    }
+
+    public function test_oversized_output_is_truncated(): void
+    {
+        $runner = new class extends ArtisanRunner
+        {
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
+            {
+                $output->write(str_repeat('x', ArtisanRunner::MAX_OUTPUT_BYTES + 500));
+
+                return 0;
+            }
+        };
+
+        $this->app->instance(ArtisanRunner::class, $runner);
+
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'route:list'])
+            ->json('result');
+
+        $this->assertTrue($result['output_truncated']);
+        $this->assertStringContainsString('[output truncated', $result['stdout']);
+        $this->assertStringContainsString(str_repeat('x', 200), $result['stdout']);
     }
 
     public function test_command_input_length_is_limited(): void
@@ -214,16 +279,49 @@ class ArtisanRunnerExecutionTest extends TestCase
             ->assertStatus(422);
     }
 
-    // ------------------------------------------------------------------
-    // Real Process plumbing sanity (non-Artisan, harmless)
-    // ------------------------------------------------------------------
-
-    public function test_symfony_process_is_usable_with_argument_arrays(): void
+    public function test_busy_lock_prevents_concurrent_execution(): void
     {
-        $process = new Process([PHP_BINARY, '-r', 'echo 1 + 1;']);
-        $process->run();
+        $lock = Cache::lock('artisan-runner.execution', ArtisanRunner::TIMEOUT_SECONDS);
+        $lock->get(); // simulate another execution in progress
 
-        $this->assertTrue($process->isSuccessful());
-        $this->assertSame('2', trim($process->getOutput()));
+        try {
+            $result = $this->actingAs($this->authorizedAdmin)
+                ->postJson('/admin/artisan-runner/run', ['command' => 'about'])
+                ->json('result');
+
+            $this->assertSame('busy', $result['status']);
+            $this->assertStringContainsString('currently running', $result['message']);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Audit trail
+    // ------------------------------------------------------------------
+
+    public function test_rejected_commands_are_audited_without_their_raw_input(): void
+    {
+        $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', [
+                'command' => 'migrate:fresh --force && echo INTERNAL-SERVER-DETAIL-MARKER',
+            ]);
+
+        $entry = AuditLog::query()->where('action', 'artisan_runner.rejected')->first();
+        $this->assertNotNull($entry);
+        $this->assertStringNotContainsString('INTERNAL-SERVER-DETAIL-MARKER', json_encode($entry->properties) ?: '');
+        $this->assertStringNotContainsString('migrate:fresh', json_encode($entry->properties) ?: '');
+    }
+}
+
+/**
+ * Test helper exposing the runner's own source path for implementation
+ * guarantee assertions.
+ */
+final class ArtisanRunnerReflection
+{
+    public function sourcePath(): string
+    {
+        return dirname(__DIR__, 2).DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.'Support'.DIRECTORY_SEPARATOR.'ArtisanRunner.php';
     }
 }

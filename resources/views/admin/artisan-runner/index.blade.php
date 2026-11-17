@@ -37,7 +37,7 @@
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
                 </svg>
-                Running command… this can take up to 2 minutes.
+                Running command… the command runs inside the web request and completes within the server's PHP execution limits.
             </div>
 
             <div class="mt-4 rounded-xl border px-4 py-3 text-sm font-medium" role="alert" data-error hidden></div>
