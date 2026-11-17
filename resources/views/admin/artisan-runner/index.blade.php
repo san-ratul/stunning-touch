@@ -133,9 +133,10 @@
         </div>
     </div>
 
-    @push('scripts')
+    @push('bottom-scripts')
     <script>
-        (function () {
+        // Init once the DOM is ready, regardless of stack placement.
+        const initArtisanRunner = () => {
             const root = document.querySelector('[data-artisan-runner]');
             if (!root) return;
 
@@ -209,8 +210,18 @@
                         body: JSON.stringify({ command }),
                     });
 
+                    if (response.status === 401) {
+                        showError('Your session has expired. Please sign in again.');
+                        return;
+                    }
+
                     if (response.status === 403) {
                         showError('You do not have permission to run Artisan commands.');
+                        return;
+                    }
+
+                    if (response.status === 419) {
+                        showError('Your session or CSRF token has expired. Refresh the page and try again.');
                         return;
                     }
 
@@ -275,7 +286,13 @@
             function hide(node) {
                 node.hidden = true;
             }
-        })();
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initArtisanRunner);
+        } else {
+            initArtisanRunner();
+        }
     </script>
     @endpush
 @endsection
