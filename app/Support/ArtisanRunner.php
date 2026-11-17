@@ -19,8 +19,10 @@ use Symfony\Component\Console\Output\BufferedOutput;
  *   functions, no PHP CLI spawning. This keeps the runner operational on
  *   shared hosting that disables process-spawning PHP functions.
  * - Output is size-capped; raw input never reaches any shell or eval.
- * - A cache lock prevents concurrent executions inside the same request
- *   worker; the web request itself remains bounded by the hosting PHP
+ * - A cache-based atomic lock is REQUIRED before every execution: if the
+ *   configured cache driver cannot provide locks, or the lock is already
+ *   held, the command is NOT executed (fail closed — no silent unlocked
+ *   runs). The web request itself remains bounded by the hosting PHP
  *   execution limits (in-process execution cannot be force-terminated).
  * - If a specific command cannot run in the current environment, its
  *   failure is reported without affecting the other commands.
@@ -208,24 +210,26 @@ class ArtisanRunner
         $command = array_shift($argv);
         $parameters = $this->argvToParameters($argv);
 
-        // Prevent concurrent executions on the same request worker.
+        // Concurrency protection is mandatory: if an atomic lock cannot be
+        // provided or acquired, the command is NOT executed (fail closed).
         $lock = null;
+        $acquired = false;
+        $lockFailure = null;
 
         try {
             $lock = Cache::lock('artisan-runner.execution', self::TIMEOUT_SECONDS);
             $acquired = $lock->get();
-        } catch (\Throwable) {
-            // If the cache store cannot provide locks, proceed without one:
-            // concurrency protection is a nicety, not a security control.
-            $lock = null;
-            $acquired = true;
+        } catch (\Throwable $exception) {
+            $this->logFailure($exception);
+            $lockFailure = $this->friendlyLockFailure($exception);
         }
 
-        if (! $acquired) {
+        if (! $acquired || $lockFailure !== null) {
             return [
                 'ok' => false,
-                'status' => 'busy',
-                'message' => 'Another command is currently running. Wait for it to finish and try again.',
+                'status' => $lockFailure !== null ? 'blocked' : 'busy',
+                'message' => $lockFailure
+                    ?? 'Another command is currently running. Wait for it to finish and try again.',
                 'exit_code' => null,
                 'duration_ms' => 0,
                 'stdout' => '',
@@ -264,9 +268,7 @@ class ArtisanRunner
                 'output_truncated' => strlen($raw) > self::MAX_OUTPUT_BYTES,
             ];
         } finally {
-            if ($lock !== null) {
-                optional($lock)->release();
-            }
+            $lock->release();
         }
 
         $raw = $output->fetch();
@@ -493,5 +495,20 @@ class ArtisanRunner
             'detail' => $exception->getMessage(),
             'class' => $exception::class,
         ]);
+    }
+
+    /**
+     * Map a lock-support/acquisition failure to a clear administrator
+     * message. No internal exception details are exposed.
+     */
+    protected function friendlyLockFailure(\Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+        $unsupported = $exception instanceof \BadMethodCallException
+            || str_contains(strtolower($message), 'does not support lock');
+
+        return $unsupported
+            ? 'Command execution requires an atomic execution lock, and the configured cache driver does not support locks. Configure a lock-capable cache driver (database, file, array, redis or memcached) and try again.'
+            : 'Command execution requires an atomic execution lock, but the lock could not be acquired on the configured cache driver. Check the cache configuration and try again.';
     }
 }

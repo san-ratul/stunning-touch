@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\ArtisanRunner;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\Console\Exception\CommandNotFoundException;
@@ -294,6 +295,100 @@ class ArtisanRunnerExecutionTest extends TestCase
         } finally {
             $lock->release();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Fail-closed locking: the executor must never run without its lock
+    // ------------------------------------------------------------------
+
+    protected function bindRecordingRunner(): object
+    {
+        $runner = new class extends ArtisanRunner
+        {
+            public bool $invoked = false;
+
+            protected function runArtisan(string $command, array $parameters, BufferedOutput $output): int
+            {
+                $this->invoked = true;
+
+                return 0;
+            }
+        };
+
+        $this->app->instance(ArtisanRunner::class, $runner);
+
+        return $runner;
+    }
+
+    public function test_unsupported_lock_store_prevents_execution(): void
+    {
+        $runner = $this->bindRecordingRunner();
+
+        // Simulate a cache store without lock support (Repository::lock
+        // throws BadMethodCallException in that case).
+        Cache::shouldReceive('lock')
+            ->once()
+            ->andThrow(new \BadMethodCallException('This cache store does not support locks.'));
+
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --class=DatabaseSeeder --force'])
+            ->json('result');
+
+        $this->assertSame('blocked', $result['status']);
+        $this->assertNull($result['exit_code']);
+        $this->assertStringContainsString('atomic execution lock', $result['message']);
+        $this->assertStringContainsString('cache driver does not support locks', $result['message']);
+        $this->assertFalse($runner->invoked, 'The executor must never run without an acquired lock.');
+    }
+
+    public function test_lock_acquisition_failure_prevents_execution(): void
+    {
+        $runner = $this->bindRecordingRunner();
+
+        // Lock provider exists but fails to hand out the lock.
+        Cache::shouldReceive('lock')
+            ->once()
+            ->andThrow(new LockTimeoutException('Could not acquire the lock.'));
+
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --class=DatabaseSeeder --force'])
+            ->json('result');
+
+        $this->assertSame('blocked', $result['status']);
+        $this->assertStringContainsString('atomic execution lock', $result['message']);
+        $this->assertStringContainsString('could not be acquired', $result['message']);
+        $this->assertFalse($runner->invoked, 'The executor must never run without an acquired lock.');
+    }
+
+    public function test_unexpected_lock_error_prevents_execution(): void
+    {
+        $runner = $this->bindRecordingRunner();
+
+        Cache::shouldReceive('lock')
+            ->once()
+            ->andThrow(new \RuntimeException('connection refused'));
+
+        $result = $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'db:seed --class=DatabaseSeeder --force'])
+            ->json('result');
+
+        $this->assertSame('blocked', $result['status']);
+        $this->assertStringContainsString('could not be acquired', $result['message']);
+        // The raw error must never reach the browser.
+        $this->assertStringNotContainsString('connection refused', json_encode($result));
+        $this->assertFalse($runner->invoked, 'The executor must never run without an acquired lock.');
+    }
+
+    public function test_lock_is_released_after_a_successful_run(): void
+    {
+        $this->actingAs($this->authorizedAdmin)
+            ->postJson('/admin/artisan-runner/run', ['command' => 'cache:clear'])
+            ->json('result');
+
+        // The lock must be free again after execution.
+        $lock = Cache::lock('artisan-runner.execution', ArtisanRunner::TIMEOUT_SECONDS);
+        $this->assertTrue($lock->get());
+        $lock->release();
     }
 
     // ------------------------------------------------------------------

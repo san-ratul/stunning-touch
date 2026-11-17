@@ -239,8 +239,8 @@
                 hide(errorBox);
                 resultPanel.hidden = false;
 
-                const state = { success: 'Success', failed: 'Failed', timeout: 'Timed out', blocked: 'Not available', rejected: 'Rejected' }[result.status] || result.status;
-                const colorClass = { success: 'text-emerald-700', failed: 'text-rose-700', timeout: 'text-amber-700', blocked: 'text-amber-700', rejected: 'text-rose-700' }[result.status] || 'text-slate-700';
+                const state = { success: 'Success', failed: 'Failed', timeout: 'Timed out', blocked: 'Blocked', busy: 'Busy', rejected: 'Rejected' }[result.status] || result.status;
+                const colorClass = { success: 'text-emerald-700', failed: 'text-rose-700', timeout: 'text-amber-700', blocked: 'text-amber-700', busy: 'text-amber-700', rejected: 'text-rose-700' }[result.status] || 'text-slate-700';
 
                 statusNode.textContent = 'Execution ' + state.toLowerCase();
                 statusNode.className = 'text-xs font-semibold uppercase tracking-wide ' + colorClass;
