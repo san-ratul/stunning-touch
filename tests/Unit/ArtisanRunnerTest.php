@@ -89,6 +89,18 @@ class ArtisanRunnerTest extends TestCase
     public function test_rejects_value_on_flag_options(): void
     {
         $this->assertParseError('db:seed --force=yes', 'bad_value');
+        $this->assertParseError('migrate --force=yes', 'bad_value');
+    }
+
+    public function test_migrate_is_allowed_with_force_flag_only(): void
+    {
+        $parsed = $this->runner->parse('migrate --force');
+
+        $this->assertSame(['migrate', '--force'], $parsed['argv']);
+
+        $this->assertParseError('migrate --step=3', 'unknown_option');
+        $this->assertParseError('migrate --path=database/migrations/evil', 'unknown_option');
+        $this->assertParseError('migrate --pretend', 'unknown_option');
     }
 
     public function test_rejects_unexpected_arguments(): void
@@ -145,6 +157,8 @@ class ArtisanRunnerTest extends TestCase
         $names = array_column($catalog, 'name');
 
         $this->assertContains('db:seed', $names);
+        $this->assertContains('migrate', $names);
+        $this->assertContains('migrate:status', $names);
         $this->assertContains('optimize:clear', $names);
         $this->assertContains('cache:clear', $names);
         $this->assertContains('config:clear', $names);
@@ -153,7 +167,7 @@ class ArtisanRunnerTest extends TestCase
         $this->assertContains('about', $names);
         $this->assertContains('route:list', $names);
         $this->assertContains('storage:link', $names);
-        $this->assertCount(9, $catalog);
+        $this->assertCount(11, $catalog);
     }
 
     public function test_output_truncation_caps_output_at_the_limit(): void

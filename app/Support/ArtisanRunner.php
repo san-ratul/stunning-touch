@@ -49,6 +49,14 @@ class ArtisanRunner
      * @var array<string, array{description: string, options: array<string, ?string>}>
      */
     public const COMMANDS = [
+        'migrate' => [
+            'description' => 'Run pending database migrations (applies the shipped migration files; use --force in production).',
+            'options' => ['force' => null],
+        ],
+        'migrate:status' => [
+            'description' => 'Show the status of each migration (read-only).',
+            'options' => [],
+        ],
         'db:seed' => [
             'description' => 'Run database seeders (only explicitly approved seeder classes).',
             'options' => ['class' => 'seeder', 'force' => null],
