@@ -89,7 +89,7 @@ class AnalyticsController extends Controller
         $searchEngines = ['google.', 'bing.', 'yahoo.', 'duckduckgo.', 'baidu.', 'yandex.', 'ecosia.', 'ask.', 'startpage.'];
         $socialSites = ['facebook.', 'twitter.', 't.co', 'x.com', 'instagram.', 'linkedin.', 'pinterest.', 'reddit.', 'tiktok.', 'youtube.', 'whatsapp.', 'quora.', 'threads.'];
 
-        $classify = function (?string $domain): string {
+        $classify = function (?string $domain) use ($searchEngines, $socialSites): string {
             if (blank($domain)) {
                 return 'direct';
             }
