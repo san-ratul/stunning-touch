@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use Illuminate\Database\QueryException;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -263,7 +264,9 @@ class ArtisanRunner
                 ? 'This command is not registered in the application console.'
                 : (str_contains($exception->getMessage(), 'proc_open')
                     ? 'This command cannot run on this server: it requires process spawning (proc_open), which is disabled by the hosting provider. Other approved commands still work.'
-                    : 'The command failed with an unexpected error. Details were logged for the administrator.');
+                    : ($exception instanceof QueryException
+                        ? $this->friendlyQueryError($exception)
+                        : 'The command failed with an unexpected error. Details were logged for the administrator.'));
 
             return [
                 'ok' => false,
@@ -495,6 +498,24 @@ class ArtisanRunner
         }
 
         return substr($output, 0, self::MAX_OUTPUT_BYTES)."\n… [output truncated at ".self::MAX_OUTPUT_BYTES.' bytes]';
+    }
+
+    /**
+     * Map a database error to a readable, non-sensitive message: the
+     * SQLSTATE code and driver reason, with the executed SQL removed
+     * (schema names only in DDL errors, but no SQL ever reaches the UI).
+     */
+    protected function friendlyQueryError(QueryException $exception): string
+    {
+        $message = $exception->getMessage();
+
+        $cut = stripos($message, '(SQL:');
+
+        if ($cut !== false) {
+            $message = trim(substr($message, 0, $cut));
+        }
+
+        return 'The command failed with a database error: '.$message.' Details were logged for the administrator.';
     }
 
     protected function logFailure(\Throwable $exception): void

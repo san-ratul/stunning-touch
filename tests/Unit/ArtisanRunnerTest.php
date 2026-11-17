@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Support\ArtisanCommandException;
 use App\Support\ArtisanRunner;
+use Illuminate\Database\QueryException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -189,6 +190,26 @@ class ArtisanRunnerTest extends TestCase
         foreach (['tinker', 'db:wipe', 'migrate:fresh', 'key:generate', 'migrate:rollback'] as $dangerous) {
             $this->assertStringNotContainsString($dangerous, $registered);
         }
+    }
+
+    public function test_database_errors_are_reported_without_sql(): void
+    {
+        $execute = new ReflectionMethod(ArtisanRunner::class, 'friendlyQueryError');
+        $execute->setAccessible(true);
+
+        $exception = new QueryException(
+            'mysql',
+            'select * from users',
+            [],
+            new \PDOException('SQLSTATE[42S21]: Column already exists: 1060 Duplicate column name \'artisan_runner_access\' (SQL: alter table `users` add `artisan_runner_access`)'),
+        );
+
+        $message = $execute->invoke($this->runner, $exception);
+
+        $this->assertStringContainsString('SQLSTATE[42S21]', $message);
+        $this->assertStringContainsString('Duplicate column name', $message);
+        $this->assertStringNotContainsString('alter table', $message);
+        $this->assertStringNotContainsString('SQL:', $message);
     }
 
     protected function assertParseError(string $input, string $reason): void

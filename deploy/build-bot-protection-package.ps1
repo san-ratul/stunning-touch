@@ -22,6 +22,7 @@ $files = @(
     'app/Support/TrafficVerdict.php',
     'bootstrap/app.php',
     'config/bot.php',
+    'database/migrations/2026_11_17_000001_add_artisan_runner_access_to_users_table.php',
     'database/migrations/2026_11_17_150000_create_bot_protection_tables.php',
     'resources/views/admin/bot-protection/index.blade.php',
     'resources/views/layouts/admin.blade.php',
@@ -46,11 +47,13 @@ $manifest = @'
 - **Package:** bot-protection-update.zip
 - **Scope:** application-managed bot detection, blocking and analytics
   (no Cloudflare, no Redis, no SSH, no queue workers required).
-- **Migration:** one new migration — run `migrate --force` through the
-  secure Admin → Artisan Runner (no SSH needed; `migrate` and
-  `migrate:status` are now allowlisted commands). It only creates two new
-  tables (`bot_traffic_metrics`, `bot_event_log`); no existing data is
-  touched.
+- **Migration:** run `migrate --force` through the secure Admin →
+  Artisan Runner (no SSH needed; `migrate` and `migrate:status` are now
+  allowlisted commands). Both shipped migrations are idempotent: the
+  artisan-runner migration skips safely when `artisan_runner_access` was
+  already added manually (cPanel SQL), and the bot-protection migration
+  skips tables that already exist — so a stale migrations-log state can
+  never block the run. No existing data is touched.
 - **After upload:** run `optimize:clear` once through the Artisan Runner
   so the new `config/bot.php` is picked up if config was ever cached.
 
@@ -73,7 +76,8 @@ app/Support/TrafficClassifier.php                (new: centralized classificatio
 app/Support/TrafficVerdict.php                   (new: classification value object)
 bootstrap/app.php                                (modified: BotGuard registered globally)
 config/bot.php                                   (new: defaults)
-database/migrations/2026_11_17_150000_create_bot_protection_tables.php (new)
+database/migrations/2026_11_17_000001_add_artisan_runner_access_to_users_table.php (modified: idempotent)
+database/migrations/2026_11_17_150000_create_bot_protection_tables.php (new: idempotent)
 public/build/                                    (complete consistent rebuild; stale app-BbecGHJM.css removed)
 resources/views/admin/bot-protection/index.blade.php (new: dashboard view)
 resources/views/layouts/admin.blade.php          (modified: sidebar entry)
