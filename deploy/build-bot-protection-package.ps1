@@ -13,6 +13,7 @@ $files = @(
     'app/Http/Middleware/BotGuard.php',
     'app/Providers/AppServiceProvider.php',
     'app/Support/Analytics.php',
+    'app/Support/ArtisanRunner.php',
     'app/Support/BotAnalytics.php',
     'app/Support/BotMetrics.php',
     'app/Support/CrawlerVerifier.php',
@@ -41,12 +42,13 @@ foreach ($f in ($files + $buildFiles)) {
 $manifest = @'
 # Deployment Manifest — Bot Protection Update
 
-- **Commit:** 6bd4864 — feat: add bot detection blocking and analytics
+- **Commit:** edc670f — feat: add bot detection blocking and analytics (+ runner allowlist)
 - **Package:** bot-protection-update.zip
 - **Scope:** application-managed bot detection, blocking and analytics
   (no Cloudflare, no Redis, no SSH, no queue workers required).
 - **Migration:** one new migration — run `migrate --force` through the
-  secure Admin → Artisan Runner (no SSH needed). It only creates two new
+  secure Admin → Artisan Runner (no SSH needed; `migrate` and
+  `migrate:status` are now allowlisted commands). It only creates two new
   tables (`bot_traffic_metrics`, `bot_event_log`); no existing data is
   touched.
 - **After upload:** run `optimize:clear` once through the Artisan Runner
@@ -62,6 +64,7 @@ app/Http/Controllers/Admin/BotProtectionController.php  (new: dashboard + settin
 app/Http/Middleware/BotGuard.php                 (new: global detection + enforcement)
 app/Providers/AppServiceProvider.php             (modified: crawler verifier binding)
 app/Support/Analytics.php                        (modified: classifier-aware tracking + tool-usage dedupe)
+app/Support/ArtisanRunner.php                    (modified: allowlist now includes migrate + migrate:status)
 app/Support/BotAnalytics.php                     (new: dashboard queries)
 app/Support/BotMetrics.php                       (new: atomic hourly counters)
 app/Support/CrawlerVerifier.php                  (new: contract)
@@ -83,6 +86,7 @@ Documentation and tests (not required at runtime, safe to upload):
 ```
 .docs/ANALYTICS.md        (modified: cross-reference)
 .docs/BOT_PROTECTION.md   (new)
+tests/Unit/ArtisanRunnerTest.php              (modified: migrate allowlist tests)
 tests/Feature/BotProtectionDashboardTest.php  (new)
 tests/Feature/BotProtectionTest.php           (new)
 tests/Unit/TrafficClassifierTest.php          (new)
@@ -110,7 +114,8 @@ Excluded by design: `.env`, `.git`, `vendor/`, `node_modules/`.
 
 ## Verification performed before packaging
 
-- Full PHP test suite: 516 passed (1841 assertions), including 34 new tests.
+- Full PHP test suite: 517 passed (1852 assertions), including the new
+  bot-protection and runner-allowlist tests.
 - JavaScript tests (node --test): 63 passed.
 - Laravel Pint: passed.
 - Vite production build: succeeded (public/build shipped in this package).
