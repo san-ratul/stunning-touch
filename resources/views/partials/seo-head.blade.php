@@ -3,8 +3,24 @@
     $seo = $seo ?? [];
     $fullTitle = \App\Support\SeoResolver::fullTitle($seo['title'] ?? '');
     $description = $seo['description'] ?? null;
-    $canonical = \App\Support\SeoResolver::absoluteUrl($seo['canonical'] ?? url()->current());
-    $ogImage = \App\Support\SeoResolver::absoluteUrl($seo['og_image'] ?? $seo['twitter_image'] ?? null);
+    // Canonical host always comes from APP_URL — never the requesting host.
+    $canonical = \App\Support\SeoResolver::absoluteUrl($seo['canonical'] ?? request()->getPathInfo());
+
+    // og:image: page-specific -> featured image (mapped upstream) -> site default.
+    $ogImage = \App\Support\SeoResolver::absoluteUrl($seo['og_image'] ?? null);
+    $ogImageIsDefault = blank($ogImage);
+    if ($ogImageIsDefault) {
+        $ogImage = \App\Support\SeoResolver::defaultOgImage();
+    }
+
+    // twitter:image: page-specific -> og:image -> site default.
+    $twitterImage = \App\Support\SeoResolver::absoluteUrl($seo['twitter_image'] ?? null) ?? $ogImage;
+
+    // og:description: resolved og_description -> standard description.
+    $ogDescription = $seo['og_description'] ?? $description;
+    // twitter:description: resolved twitter_description -> og:description -> description.
+    $twitterDescription = $seo['twitter_description'] ?? $ogDescription;
+
     $siteName = \App\Support\SeoResolver::siteName();
 @endphp
 
@@ -24,20 +40,22 @@
 <meta property="og:type" content="{{ ($seo['schema_type'] ?? '') === 'Article' ? 'article' : 'website' }}">
 <meta property="og:site_name" content="{{ $siteName }}">
 <meta property="og:title" content="{{ \Illuminate\Support\Str::limit($seo['og_title'] ?? $fullTitle, 90) }}">
-@if($description)
-    <meta property="og:description" content="{{ \Illuminate\Support\Str::limit($description, 200) }}">
+@if(!blank($ogDescription))
+    <meta property="og:description" content="{{ \Illuminate\Support\Str::limit($ogDescription, 200) }}">
 @endif
 <meta property="og:url" content="{{ $canonical }}">
-@if($ogImage)
-    <meta property="og:image" content="{{ $ogImage }}">
+<meta property="og:image" content="{{ $ogImage }}">
+@if($ogImageIsDefault)
+    {{-- Metadata is only known for the bundled default image. --}}
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
 @endif
 
 {{-- Twitter --}}
-<meta name="twitter:card" content="{{ $ogImage ? 'summary_large_image' : 'summary' }}">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ \Illuminate\Support\Str::limit($seo['twitter_title'] ?? $fullTitle, 90) }}">
-@if($description)
-    <meta name="twitter:description" content="{{ \Illuminate\Support\Str::limit($description, 200) }}">
+@if(!blank($twitterDescription))
+    <meta name="twitter:description" content="{{ \Illuminate\Support\Str::limit($twitterDescription, 200) }}">
 @endif
-@if($ogImage)
-    <meta name="twitter:image" content="{{ $ogImage }}">
-@endif
+<meta name="twitter:image" content="{{ $twitterImage }}">

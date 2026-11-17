@@ -50,13 +50,13 @@ class SeoTest extends TestCase
         $response->assertHeader('Content-Type', 'application/xml; charset=UTF-8');
 
         foreach ([
-            url('/'),
-            url('/image-compressor'),
-            url('/merge-pdf'),
-            url('/image-tools'),
-            url('/privacy-policy'),
-            route('blog.show', 'sitemap-post'),
-            route('blog.category', 'image-optimization'),
+            'https://stunningtouch.com/',
+            'https://stunningtouch.com/image-compressor',
+            'https://stunningtouch.com/merge-pdf',
+            'https://stunningtouch.com/image-tools',
+            'https://stunningtouch.com/privacy-policy',
+            'https://stunningtouch.com/blog/sitemap-post',
+            'https://stunningtouch.com/blog/category/image-optimization',
         ] as $url) {
             $response->assertSee($url, false);
         }
@@ -85,7 +85,7 @@ class SeoTest extends TestCase
         $content = $response->getContent();
 
         $this->assertStringContainsString('Disallow: /admin', $content);
-        $this->assertStringContainsString('Sitemap: '.url('/sitemap.xml'), $content);
+        $this->assertStringContainsString('Sitemap: https://stunningtouch.com/sitemap.xml', $content);
     }
 
     public function test_home_has_canonical_and_og_metadata(): void

@@ -36,9 +36,12 @@ class AppServiceProvider extends ServiceProvider
         // admin dashboard instead of the public homepage.
         RedirectIfAuthenticated::redirectUsing(fn () => route('admin.dashboard'));
 
-        // Force HTTPS for generated URLs when behind a TLS-terminating proxy.
+        // Force HTTPS and the canonical host for generated URLs when behind
+        // a TLS-terminating proxy, so canonical tags, og:url, sitemap entries
+        // and route()/asset() URLs never depend on the requesting hostname.
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
+            URL::forceRootUrl(config('app.url'));
         }
 
         $this->registerSmtpRateLimiters();

@@ -19,10 +19,13 @@ Admin → **SEO Manager** lists every real page grouped by type:
 Editable fields per page: Meta title, Meta description (live length counters), Focus keyword, Secondary keywords, Canonical URL, OG title/description/image, Twitter title/description/image, robots index/follow, Schema type, Schema data (JSON).
 
 ## Automatic technical SEO
-- **Sitemap** `/sitemap.xml`: homepage (1.0), tools (0.9), categories (0.8), blog posts (0.7), blog categories (0.5), static pages (0.4) — with lastmod where meaningful. Draft posts, inactive/archived tools and hidden pages are excluded.
-- **robots.txt** `/robots.txt`: allows all, disallows `/admin`, `/api`, `/run-scheduler`, and points to the sitemap.
-- **Canonical URLs**: entity canonical override → current URL.
-- **Open Graph + Twitter cards** on every page with `og:type` (website/article), `og:site_name`, images when provided.
+- **Canonical domain**: `https://stunningtouch.com` (`APP_URL`). Requests to `www.*` or plain HTTP 301 to the canonical URL in a single hop (path + query preserved): host redirects in `RedirectCanonicalHost` middleware + `.htaccess` (www/apex); the HTTP→HTTPS upgrade lives in `.htaccess` guarded by `%{HTTPS}` **and** `X-Forwarded-Proto` so it cannot loop behind a TLS-terminating proxy. In production, `URL::forceScheme('https')` + `URL::forceRootUrl(APP_URL)` make every generated URL canonical regardless of the requesting host.
+- **Sitemap** `/sitemap.xml`: homepage (1.0), tools (0.9), categories (0.8), blog posts (0.7), blog categories (0.5), static pages (0.4) — with lastmod where meaningful. All `<loc>` URLs are built from `APP_URL`, never from the requesting hostname. Draft posts, inactive/archived tools and hidden pages are excluded.
+- **robots.txt**: served as the shipped static `public/robots.txt` (it shadows the Laravel route on the web server, so both are kept identical): allows all, disallows `/admin`, `/api`, `/run-scheduler`, and points at the canonical sitemap exactly once.
+- **Canonical URLs**: entity canonical override → `APP_URL` + request path (never the requesting host).
+- **Open Graph + Twitter cards** on every page with `og:type` (website/article), `og:site_name`, `og:url` (canonical). Image fallback chain: page OG image → blog featured image → bundled default `public/og-image.png` (1200×630; width/height/type emitted for the default). Twitter image: page Twitter image → OG image → default. Descriptions: resolved OG/Twitter description → standard meta description.
+- **HSTS**: `Strict-Transport-Security: max-age=31536000` on HTTPS responses only (no `includeSubDomains`, no `preload`, emitted once from `SecurityHeaders` middleware).
+- **Favicons**: SVG icon + ICO fallback + `apple-touch-icon.png` (180×180) declared in the layout.
 - **Structured data (JSON-LD)**:
   - `BreadcrumbList` on tools/categories/blog/static pages.
   - `Article` on blog posts (headline, dates, author, publisher, image).

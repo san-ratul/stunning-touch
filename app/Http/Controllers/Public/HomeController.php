@@ -22,7 +22,7 @@ class HomeController extends Controller
         $meta = SeoResolver::normalize(
             SeoResolver::forModel(null),
             SeoResolver::siteName().' — '.SeoResolver::tagline(),
-            'Free online tools for images, PDFs, text, developers and more. Compress images, merge PDFs, convert text, generate QR codes and UUIDs — fast, private, in your browser.'
+            'Free browser-based tools for images, PDFs and text. Compress images, merge PDFs, count words, format JSON, generate QR codes and more — private by design.'
         );
 
         return view('home', [

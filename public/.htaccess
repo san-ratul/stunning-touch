@@ -9,9 +9,17 @@
 
     RewriteEngine On
 
-    # Force HTTPS (uncomment after SSL is active on the domain)
-    # RewriteCond %{HTTPS} !=on
-    # RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+    # Canonical host: www -> apex, single hop, path + query preserved.
+    # Loop-free by construction: the target host never matches again.
+    RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+    RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L,NE]
+
+    # Force HTTPS: only when neither Apache observed TLS nor the frontend
+    # proxy reported it via X-Forwarded-Proto. Redirects to the canonical
+    # host so http://www and http://apex both land in a single hop.
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L,NE]
 
     # Block direct access to dotfiles
     RewriteRule ^(\.)[^/]+ - [F,L]

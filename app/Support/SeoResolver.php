@@ -86,4 +86,13 @@ class SeoResolver
 
         return rtrim(config('app.url'), '/').'/'.ltrim($pathOrUrl, '/');
     }
+
+    /**
+     * Site-wide default social preview image as an absolute canonical URL.
+     * Used when a page provides no page-specific og:image/twitter:image.
+     */
+    public static function defaultOgImage(): string
+    {
+        return (string) self::absoluteUrl('og-image.png');
+    }
 }

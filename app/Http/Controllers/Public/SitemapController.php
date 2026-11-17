@@ -8,6 +8,7 @@ use App\Models\BlogPost;
 use App\Models\Category;
 use App\Models\StaticPage;
 use App\Models\Tool;
+use App\Support\SeoResolver;
 use Illuminate\Http\Response;
 
 class SitemapController extends Controller
@@ -16,22 +17,24 @@ class SitemapController extends Controller
     {
         $urls = collect();
 
-        $urls->push(['loc' => url('/'), 'priority' => '1.0', 'changefreq' => 'daily']);
+        // URLs are always built from the canonical APP_URL, never from the
+        // requesting hostname, so the sitemap is stable across host variants.
+        $urls->push(['loc' => SeoResolver::absoluteUrl('/'), 'priority' => '1.0', 'changefreq' => 'daily']);
 
         StaticPage::query()->where('is_active', true)->get()
-            ->each(fn ($p) => $urls->push(['loc' => url('/'.$p->slug), 'priority' => '0.4', 'changefreq' => 'monthly', 'lastmod' => $p->updated_at]));
+            ->each(fn ($p) => $urls->push(['loc' => SeoResolver::absoluteUrl('/'.$p->slug), 'priority' => '0.4', 'changefreq' => 'monthly', 'lastmod' => $p->updated_at]));
 
         Category::query()->active()->ordered()->get()
-            ->each(fn ($c) => $urls->push(['loc' => url('/'.$c->slug), 'priority' => '0.8', 'changefreq' => 'weekly', 'lastmod' => $c->updated_at]));
+            ->each(fn ($c) => $urls->push(['loc' => SeoResolver::absoluteUrl('/'.$c->slug), 'priority' => '0.8', 'changefreq' => 'weekly', 'lastmod' => $c->updated_at]));
 
         Tool::query()->active()->with('category')->get()
-            ->each(fn ($t) => $urls->push(['loc' => url('/'.$t->slug), 'priority' => '0.9', 'changefreq' => 'weekly', 'lastmod' => $t->updated_at]));
+            ->each(fn ($t) => $urls->push(['loc' => SeoResolver::absoluteUrl('/'.$t->slug), 'priority' => '0.9', 'changefreq' => 'weekly', 'lastmod' => $t->updated_at]));
 
         BlogCategory::query()->where('is_active', true)->get()
-            ->each(fn ($c) => $urls->push(['loc' => route('blog.category', $c->slug), 'priority' => '0.5', 'changefreq' => 'weekly', 'lastmod' => $c->updated_at]));
+            ->each(fn ($c) => $urls->push(['loc' => SeoResolver::absoluteUrl('/blog/category/'.$c->slug), 'priority' => '0.5', 'changefreq' => 'weekly', 'lastmod' => $c->updated_at]));
 
         BlogPost::query()->published()->get()
-            ->each(fn ($p) => $urls->push(['loc' => route('blog.show', $p->slug), 'priority' => '0.7', 'changefreq' => 'monthly', 'lastmod' => $p->updated_at ?: $p->published_at]));
+            ->each(fn ($p) => $urls->push(['loc' => SeoResolver::absoluteUrl('/blog/'.$p->slug), 'priority' => '0.7', 'changefreq' => 'monthly', 'lastmod' => $p->updated_at ?: $p->published_at]));
 
         $xml = view('seo.sitemap', ['urls' => $urls])->render();
 
@@ -48,7 +51,7 @@ class SitemapController extends Controller
             'Disallow: /api/*',
             'Disallow: /run-scheduler/*',
             '',
-            'Sitemap: '.url('/sitemap.xml'),
+            'Sitemap: '.SeoResolver::absoluteUrl('/sitemap.xml'),
             '',
         ];
 

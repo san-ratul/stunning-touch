@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\BotGuard;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\RedirectCanonicalHost;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackVisitor;
 use App\Support\SeoResolver;
@@ -18,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Canonical-host redirect (www -> apex, single hop, loop-free) must
+        // run before everything else so requests to the wrong host never
+        // reach bot counting, analytics or the application itself.
+        $middleware->prepend(RedirectCanonicalHost::class);
         $middleware->append(SecurityHeaders::class);
         // BotGuard wraps the entire middleware stack (global): route-level
         // throttle middleware is priority-sorted ahead of appended web

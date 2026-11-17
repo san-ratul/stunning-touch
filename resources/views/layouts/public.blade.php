@@ -19,6 +19,8 @@
     @endif
 
     <link rel="icon" href="{{ asset('favicon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ asset('favicon.ico') }}" sizes="any">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>[x-cloak]{display:none!important}</style>
 </head>
@@ -33,7 +35,7 @@
         $ldBreadcrumbs = [
             '@context' => 'https://schema.org',
             '@type' => 'BreadcrumbList',
-            'itemListElement' => collect([['label' => 'Home', 'url' => url('/')], ...$breadcrumbsItems])
+            'itemListElement' => collect([['label' => 'Home', 'url' => \App\Support\SeoResolver::absoluteUrl('/')], ...$breadcrumbsItems])
                 ->values()
                 ->map(fn ($item, $i) => [
                     '@type' => 'ListItem',
