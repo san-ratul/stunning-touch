@@ -1,5 +1,10 @@
 # Analytics & Tool Statistics
 
+> Automated traffic (bots, crawlers, suspicious and unknown clients) is
+> tracked separately — see **`.docs/BOT_PROTECTION.md`** and
+> **Admin → Insights → Bot Protection**. It is never counted in human
+> visitor analytics below.
+
 ## Privacy model
 - Visitors are identified by `SHA-256(IP + user-agent + APP_KEY + date)` — **raw IPs are never stored** and the hash rotates daily so it cannot track people across days.
 - Bots/crawlers (user-agent patterns), empty UAs, `/admin*`, `/api*` and non-200 responses are never tracked.

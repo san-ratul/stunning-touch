@@ -9,6 +9,7 @@ use App\Models\Tool;
 use App\Models\ToolUsage;
 use App\Models\Visitor;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -30,13 +31,11 @@ class Analytics
             return false;
         }
 
-        $ua = (string) $request->userAgent();
-
-        if ($ua === '' || preg_match(self::BOT_PATTERN, $ua)) {
-            return false;
-        }
-
-        return true;
+        // Classification is server-side only. Human and unknown traffic is
+        // tracked (unknown is kept separate in dashboards, never relabelled
+        // as human); verified, known and suspicious automation is excluded
+        // from human visitor counts.
+        return ! TrafficClassifier::classify($request)->isBot();
     }
 
     public static function fingerprint(Request $request): string
@@ -194,6 +193,10 @@ class Analytics
 
     /**
      * Record an actual tool processing event. Only real operations count.
+     *
+     * Automated clients are never recorded (bot usage is excluded from
+     * human tool usage analytics), and identical duplicate submissions
+     * inside a short window are rejected instead of double-counted.
      */
     public static function recordToolUsage(string $componentKey, bool $success, string $eventType = 'run'): void
     {
@@ -205,10 +208,30 @@ class Analytics
 
         $request = request();
         $visitorId = null;
+        $hash = null;
 
-        if ($request && self::shouldTrack($request)) {
-            $visitor = Visitor::query()->where('visitor_hash', self::fingerprint($request))->first();
-            $visitorId = $visitor?->id;
+        if ($request && ! ($request->is('admin/*') || $request->is('admin'))) {
+            $verdict = TrafficClassifier::classify($request);
+
+            if ($verdict->isBot()) {
+                return; // automated usage never enters human analytics
+            }
+
+            $hash = self::fingerprint($request);
+
+            if (self::shouldTrack($request)) {
+                $visitor = Visitor::query()->where('visitor_hash', $hash)->first();
+                $visitorId = $visitor?->id;
+            }
+
+            $window = max(5, (int) config('bot.tool_dedupe_window', 60));
+            $dupeKey = 'tool-dedupe-'.hash('sha256', $hash.'|'.$componentKey.'|'.$eventType.'|'.var_export($success, true));
+
+            if (! Cache::add($dupeKey, true, now()->addSeconds($window))) {
+                BotMetrics::recordNamed($verdict->category, (string) $verdict->botName, 'tool-usage', BotMetrics::ACTION_DUPLICATE_REJECTED, 'duplicate-tool-event');
+
+                return;
+            }
         }
 
         ToolUsage::query()->create([

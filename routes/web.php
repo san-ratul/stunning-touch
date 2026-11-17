@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [Public\HomeController::class, 'index'])->name('home');
 Route::get('/tools', [Public\ToolsController::class, 'index'])->name('tools.index');
-Route::get('/tools/search', [Public\ToolsController::class, 'search'])->name('tools.search');
+Route::get('/tools/search', [Public\ToolsController::class, 'search'])->middleware('throttle:30,1')->name('tools.search');
 Route::get('/about', [Public\PageController::class, 'about'])->name('about');
 Route::get('/contact', [Public\PageController::class, 'contact'])->name('contact');
 Route::post('/contact', [Public\PageController::class, 'submitContact'])->middleware('throttle:5,1')->name('contact.submit');
@@ -89,6 +89,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('analytics', [Admin\AnalyticsController::class, 'index'])->name('analytics.index');
         Route::get('tool-statistics', [Admin\ToolStatisticsController::class, 'index'])->name('tool-statistics.index');
+
+        // Bot Protection: detection/enforcement analytics + admin controls.
+        Route::get('bot-protection', [Admin\BotProtectionController::class, 'index'])->name('bot-protection.index');
+        Route::put('bot-protection/settings', [Admin\BotProtectionController::class, 'updateSettings'])
+            ->middleware('throttle:10,1')
+            ->name('bot-protection.settings');
 
         Route::get('advertisements', [Admin\AdvertisementController::class, 'edit'])->name('advertisements.edit');
         Route::put('advertisements', [Admin\AdvertisementController::class, 'update'])->name('advertisements.update');

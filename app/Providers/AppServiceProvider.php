@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Services\Smtp\SmtpConnectionFactoryInterface;
 use App\Services\Smtp\SocketSmtpConnectionFactory;
+use App\Support\CrawlerVerifier;
+use App\Support\ReverseDnsCrawlerVerifier;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -17,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(SmtpConnectionFactoryInterface::class, SocketSmtpConnectionFactory::class);
+        $this->app->bind(CrawlerVerifier::class, ReverseDnsCrawlerVerifier::class);
     }
 
     public function boot(): void

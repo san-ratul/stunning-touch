@@ -7,6 +7,7 @@ use App\Models\PageView;
 use App\Models\SiteSetting;
 use App\Models\ToolUsage;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class AggregateAnalytics extends Command
 {
@@ -48,7 +49,15 @@ class AggregateAnalytics extends Command
             $deletedUsage = ToolUsage::query()->where('created_at', '<', $cutoff)->delete();
             $deletedVisitors = VisitorCleanup::pruneOrphans();
 
-            $this->info("Cleanup: removed {$deletedViews} page views, {$deletedUsage} usage rows, {$deletedVisitors} orphan visitors.");
+            // Bot protection aggregates: prune event details after 30 days
+            // and metrics after 180 days (bounded, aggregate-only data).
+            $cutoffEvents = now()->subDays(30)->toDateString();
+            $cutoffMetrics = now()->subDays(180)->toDateString();
+
+            $deletedBotEvents = DB::table('bot_event_log')->where('date', '<', $cutoffEvents)->delete();
+            $deletedBotMetrics = DB::table('bot_traffic_metrics')->where('date', '<', $cutoffMetrics)->delete();
+
+            $this->info("Cleanup: removed {$deletedViews} page views, {$deletedUsage} usage rows, {$deletedVisitors} orphan visitors, {$deletedBotEvents} bot event buckets, {$deletedBotMetrics} bot metric buckets.");
         }
 
         return self::SUCCESS;

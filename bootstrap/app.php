@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\BotGuard;
 use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\TrackVisitor;
@@ -18,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->append(SecurityHeaders::class);
+        // BotGuard wraps the entire middleware stack (global): route-level
+        // throttle middleware is priority-sorted ahead of appended web
+        // middleware and throws 429s, so bot counting must run outside it.
+        $middleware->append(BotGuard::class);
         // AuthenticateSession invalidates sessions whose stored password
         // hash no longer matches (e.g. after an admin password change), so
         // every other signed-in session is signed out.

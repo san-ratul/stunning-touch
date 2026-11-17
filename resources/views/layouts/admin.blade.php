@@ -49,6 +49,7 @@
                     ],
                     'Insights' => [
                         ['analytics', 'Visitor Analytics', 'chart', 'admin.analytics.index'],
+                        ['bot-protection', 'Bot Protection', 'shield', 'admin.bot-protection.index'],
                         ['tool-statistics', 'Tool Statistics', 'chart', 'admin.tool-statistics.index'],
                         ['monitoring', 'AI Monitoring', 'sparkles', 'admin.monitoring.index'],
                     ],
