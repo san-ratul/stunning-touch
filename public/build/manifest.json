@@ -13,7 +13,7 @@
     ]
   },
   "resources/css/app.css": {
-    "file": "assets/app-Bvl5ff0l.css",
+    "file": "assets/app-RMfOxuvm.css",
     "src": "resources/css/app.css",
     "isEntry": true,
     "name": "app",
@@ -22,13 +22,15 @@
     ]
   },
   "resources/js/app.js": {
-    "file": "assets/app-DC5dYEJT.js",
+    "file": "assets/app-DdoJtk-2.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "dynamicImports": [
       "resources/js/tools/base64.js",
       "resources/js/tools/case-converter.js",
+      "resources/js/tools/crop-core.js",
+      "resources/js/tools/crop-editor.js",
       "resources/js/tools/helpers.js",
       "resources/js/tools/image-compressor.js",
       "resources/js/tools/image-resizer.js",
@@ -68,6 +70,21 @@
     "src": "resources/js/tools/case-converter.js",
     "isDynamicEntry": true
   },
+  "resources/js/tools/crop-core.js": {
+    "file": "assets/crop-core-FG20owxD.js",
+    "name": "crop-core",
+    "src": "resources/js/tools/crop-core.js",
+    "isDynamicEntry": true
+  },
+  "resources/js/tools/crop-editor.js": {
+    "file": "assets/crop-editor-DPuKmtFm.js",
+    "name": "crop-editor",
+    "src": "resources/js/tools/crop-editor.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/tools/crop-core.js"
+    ]
+  },
   "resources/js/tools/helpers.js": {
     "file": "assets/helpers-xiUezYzb.js",
     "name": "helpers",
@@ -75,7 +92,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/image-compressor.js": {
-    "file": "assets/image-compressor-CNYCRBg-.js",
+    "file": "assets/image-compressor-DgMyF9wp.js",
     "name": "image-compressor",
     "src": "resources/js/tools/image-compressor.js",
     "isDynamicEntry": true,
@@ -86,18 +103,20 @@
     ]
   },
   "resources/js/tools/image-resizer.js": {
-    "file": "assets/image-resizer-ERuexLWJ.js",
+    "file": "assets/image-resizer-C7yN8HcG.js",
     "name": "image-resizer",
     "src": "resources/js/tools/image-resizer.js",
     "isDynamicEntry": true,
     "imports": [
       "resources/js/tools/image-tool.js",
+      "resources/js/tools/crop-editor.js",
+      "resources/js/tools/crop-core.js",
       "resources/js/tools/helpers.js",
       "resources/js/app.js"
     ]
   },
   "resources/js/tools/image-tool.js": {
-    "file": "assets/image-tool-rfNphe6D.js",
+    "file": "assets/image-tool-rbklUlQ7.js",
     "name": "image-tool",
     "src": "resources/js/tools/image-tool.js",
     "isDynamicEntry": true,
@@ -107,7 +126,7 @@
     ]
   },
   "resources/js/tools/jpg-to-png.js": {
-    "file": "assets/jpg-to-png-DabMVWLo.js",
+    "file": "assets/jpg-to-png-Cqb7sYMa.js",
     "name": "jpg-to-png",
     "src": "resources/js/tools/jpg-to-png.js",
     "isDynamicEntry": true,
@@ -124,7 +143,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/merge-pdf.js": {
-    "file": "assets/merge-pdf-BE-XrHLl.js",
+    "file": "assets/merge-pdf-oK3CpnaS.js",
     "name": "merge-pdf",
     "src": "resources/js/tools/merge-pdf.js",
     "isDynamicEntry": true,
@@ -143,7 +162,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/png-to-webp.js": {
-    "file": "assets/png-to-webp-D1dC62lb.js",
+    "file": "assets/png-to-webp-e3h8YaKe.js",
     "name": "png-to-webp",
     "src": "resources/js/tools/png-to-webp.js",
     "isDynamicEntry": true,
@@ -201,7 +220,7 @@
     "isDynamicEntry": true
   },
   "resources/js/tools/split-pdf.js": {
-    "file": "assets/split-pdf-CXa922_M.js",
+    "file": "assets/split-pdf-B2Bfeb0J.js",
     "name": "split-pdf",
     "src": "resources/js/tools/split-pdf.js",
     "isDynamicEntry": true,

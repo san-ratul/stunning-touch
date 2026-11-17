@@ -109,4 +109,25 @@ export function scaleTo(canvasSource, targetW, targetH) {
     return canvas;
 }
 
+/**
+ * Draw the `cropRect` region ({x, y, w, h} in source pixels) of `source`
+ * onto a canvas of `outW` × `outH` pixels. When out dims equal the crop
+ * dims this is a lossless 1:1 crop; otherwise the cropped region is
+ * scaled to the requested output size.
+ */
+export function cropTo(canvasSource, cropRect, outW, outH) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(outW));
+    canvas.height = Math.max(1, Math.round(outH));
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+        canvasSource,
+        cropRect.x, cropRect.y, cropRect.w, cropRect.h,
+        0, 0, canvas.width, canvas.height,
+    );
+    return canvas;
+}
+
 export { baseName, canvasToBlob };

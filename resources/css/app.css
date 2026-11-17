@@ -209,6 +209,98 @@ html.dark .theme-toggle:hover {
         @apply border-brand-500 bg-brand-50;
     }
 
+    /* ---------- Image Resizer crop editor ---------- */
+
+    .crop-stage {
+        @apply w-full select-none rounded-xl bg-slate-100 p-2;
+        touch-action: none;
+    }
+
+    .crop-canvas {
+        @apply relative mx-auto w-fit overflow-hidden rounded-lg shadow-inner;
+        line-height: 0;
+    }
+
+    .crop-image {
+        @apply block max-h-[60vh] w-auto max-w-full;
+        -webkit-user-drag: none;
+    }
+
+    .crop-box {
+        @apply absolute cursor-move border-2 border-white;
+        box-shadow: 0 0 0 9999px rgb(2 6 23 / 0.55);
+        outline: 1px solid rgb(255 255 255 / 0.35);
+        outline-offset: 0;
+    }
+
+    .crop-box:focus-visible {
+        @apply border-brand-300;
+        outline: 2px solid var(--color-brand-400);
+        outline-offset: -2px;
+    }
+
+    .crop-grid {
+        @apply pointer-events-none absolute inset-0;
+        background-image:
+            linear-gradient(to right, rgb(255 255 255 / 0.45) 1px, transparent 1px),
+            linear-gradient(to bottom, rgb(255 255 255 / 0.45) 1px, transparent 1px);
+        background-size: 33.34% 33.34%;
+    }
+
+    .crop-dims {
+        @apply absolute bottom-1 left-1/2 -translate-x-1/2 rounded-md bg-slate-900/75 px-1.5 py-0.5 text-[11px] font-medium text-white;
+        line-height: 1.4;
+        white-space: nowrap;
+    }
+
+    .crop-handle {
+        @apply absolute block h-4 w-4 rounded-sm border-2 border-brand-600 bg-white shadow-md;
+        padding: 0;
+        transform: translate(-50%, -50%);
+    }
+
+    .crop-handle:focus-visible {
+        @apply outline-2 outline-offset-2 outline-brand-500;
+    }
+
+    .crop-handle-nw { top: 0; left: 0; cursor: nwse-resize; }
+    .crop-handle-n  { top: 0; left: 50%; cursor: ns-resize; }
+    .crop-handle-ne { top: 0; left: 100%; cursor: nesw-resize; }
+    .crop-handle-e  { top: 50%; left: 100%; cursor: ew-resize; }
+    .crop-handle-se { top: 100%; left: 100%; cursor: nwse-resize; }
+    .crop-handle-s  { top: 100%; left: 50%; cursor: ns-resize; }
+    .crop-handle-sw { top: 100%; left: 0; cursor: nesw-resize; }
+    .crop-handle-w  { top: 50%; left: 0; cursor: ew-resize; }
+
+    /* Larger targets for touch input */
+    @media (pointer: coarse) {
+        .crop-handle {
+            @apply h-6 w-6;
+        }
+    }
+
+    .crop-pos-btn {
+        @apply flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border border-slate-300 bg-white p-1.5 text-slate-400 shadow-xs transition-colors hover:border-brand-400 hover:text-brand-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600;
+    }
+
+    .crop-pos-btn.is-active {
+        @apply border-brand-600 bg-brand-600 text-white;
+    }
+
+    .crop-pos-dot {
+        @apply block h-2.5 w-2.5 rounded-sm bg-current;
+    }
+
+    .crop-pos-btn[data-pos="top-left"] { align-items: flex-start; justify-content: flex-start; }
+    .crop-pos-btn[data-pos="top"] { align-items: flex-start; justify-content: center; }
+    .crop-pos-btn[data-pos="top-right"] { align-items: flex-start; justify-content: flex-end; }
+    .crop-pos-btn[data-pos="left"] { align-items: center; justify-content: flex-start; }
+    .crop-pos-btn[data-pos="center"] { align-items: center; justify-content: center; }
+    .crop-pos-btn[data-pos="right"] { align-items: center; justify-content: flex-end; }
+    .crop-pos-btn[data-pos="bottom-left"] { align-items: flex-end; justify-content: flex-start; }
+    .crop-pos-btn[data-pos="bottom"] { align-items: flex-end; justify-content: center; }
+    .crop-pos-btn[data-pos="bottom-right"] { align-items: flex-end; justify-content: flex-end; }
+
     .faq-trigger[aria-expanded="true"] svg {
         @apply rotate-90;
     }
@@ -305,6 +397,18 @@ html.dark .btn-danger:hover {
 
 html.dark .dropzone {
     background-color: rgba(24, 35, 57, 0.55);
+}
+
+html.dark .crop-stage {
+    background-color: rgba(24, 35, 57, 0.55);
+}
+
+html.dark .crop-pos-btn {
+    background-color: #111c31;
+}
+
+html.dark .crop-pos-btn.is-active {
+    background-color: var(--color-brand-600);
 }
 
 html.dark .bg-slate-900\/50,

@@ -20,7 +20,7 @@ All 12 tools process data **entirely in the browser**. Nothing is uploaded to an
 ## Feature details
 
 1. **Image Compressor** — drag-drop or picker (JPG/PNG/WebP, ≤15 MB), quality slider (10–95%), output format JPEG/WebP/PNG, original vs new size, savings %, preview, download.
-2. **Image Resizer** — exact width/height, aspect-ratio lock, percentage scaling (1–400%), presets (HD, Full HD, square 1080, story 1080×1920), format choice, input validation (1–12000 px).
+2. **Image Resizer** — exact width/height, aspect-ratio lock, percentage scaling (1–400%), presets (HD, Full HD, square 1080, story 1080×1920), format choice, input validation (1–12000 px). Integrated interactive crop editor (`crop-core.js` + `crop-editor.js`): draggable/resizable crop box with 8 handles (pointer + keyboard + touch), Keep Aspect Ratio toggle, nine position presets with custom-position detection, reset, live crop preview; the crop region is exported at the requested output size (upscaled when the request exceeds the image bounds).
 3. **JPG to PNG** — real canvas conversion, white background under transparency, preview + size comparison, download.
 4. **PNG to WebP** — quality slider with live re-encode, resulting size + savings, graceful error if the browser cannot export WebP.
 5. **Merge PDF** — multiple PDFs (≤40 MB each), list with reorder (up/down), remove, merged page count, single download, `ignoreEncryption` handling, producer stamp.
