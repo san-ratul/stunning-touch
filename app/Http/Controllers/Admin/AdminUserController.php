@@ -70,12 +70,23 @@ class AdminUserController extends Controller
             'is_active' => ['nullable', 'boolean'],
         ];
 
+        // Dedicated permission, default-deny. Administrators can grant it
+        // to OTHER admins only — never to themselves, never via a request
+        // parameter masquerading as their own identity.
+        if (! $user || $user->id !== auth()->id()) {
+            $rules['artisan_runner_access'] = ['nullable', 'boolean'];
+        }
+
         if ($withPassword) {
             $rules['password'] = ['required', 'string', 'min:10', 'regex:/[a-zA-Z]/', 'regex:/[0-9]/'];
         }
 
         $validated = $request->validate($rules);
         $validated['is_active'] = (bool) ($validated['is_active'] ?? false);
+
+        if (isset($rules['artisan_runner_access'])) {
+            $validated['artisan_runner_access'] = (bool) ($validated['artisan_runner_access'] ?? false);
+        }
 
         return $validated;
     }

@@ -25,6 +25,22 @@
                 <input type="checkbox" name="is_active" value="1" class="h-4 w-4 rounded accent-brand-600" {{ old('is_active', $user->exists ? $user->is_active : true) ? 'checked' : '' }}>
                 Active (can sign in)
             </label>
+
+            {{-- Dedicated Artisan Runner permission. Never shown for your
+                 own account: administrators cannot grant it to themselves. --}}
+            @if(! $user->exists || $user->id !== auth()->id())
+                <label class="flex cursor-pointer items-start gap-2.5 text-sm text-slate-700">
+                    <input type="checkbox" name="artisan_runner_access" value="1" class="mt-0.5 h-4 w-4 rounded accent-brand-600" {{ old('artisan_runner_access', $user->artisan_runner_access ?? false) ? 'checked' : '' }}>
+                    <span>
+                        Artisan Command Runner access
+                        <span class="block text-xs font-normal text-slate-500">Allows running approved Artisan commands (e.g. db:seed) without SSH. Grant sparingly.</span>
+                    </span>
+                </label>
+            @elseif($user->artisan_runner_access)
+                <p class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-500">
+                    This is your own account — Artisan Runner access ({{ auth()->user()->artisan_runner_access ? 'granted to you' : 'not granted' }}) can only be changed by another administrator.
+                </p>
+            @endif
         </div>
 
         <div class="flex gap-3">

@@ -16,6 +16,7 @@ class User extends Authenticatable
         'email',
         'password',
         'is_active',
+        'artisan_runner_access',
     ];
 
     protected $hidden = [
@@ -29,6 +30,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'artisan_runner_access' => 'boolean',
             'last_login_at' => 'datetime',
         ];
     }

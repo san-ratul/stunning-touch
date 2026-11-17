@@ -32,7 +32,7 @@
                         </td>
                         <td class="px-4 py-3 text-slate-500">{{ $user->last_login_at?->diffForHumans() ?? 'Never' }}</td>
                         <td class="px-4 py-3"><span class="badge-slate">{{ $user->audit_logs_count }}</span></td>
-                        <td class="px-4 py-3"><span class="{{ $user->is_active ? 'badge-green' : 'badge-red' }}">{{ $user->is_active ? 'Active' : 'Disabled' }}</span></td>
+                        <td class="px-4 py-3"><span class="{{ $user->is_active ? 'badge-green' : 'badge-red' }}">{{ $user->is_active ? 'Active' : 'Disabled' }}</span> @if($user->artisan_runner_access)<span class="badge-slate" title="May run approved Artisan commands">artisan</span>@endif</td>
                         <td class="px-4 py-3">
                             <div class="flex justify-end gap-1.5">
                                 <a href="{{ route('admin.users.edit', $user) }}" class="btn-secondary px-2 py-1 text-xs">Edit</a>

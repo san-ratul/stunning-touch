@@ -7,6 +7,7 @@ use App\Services\Smtp\SocketSmtpConnectionFactory;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -20,6 +21,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Dedicated, explicit permission for the admin Artisan Command
+        // Runner. Default-deny: it must be granted to a specific admin by
+        // another admin via the Users form — no self-granting, and
+        // authentication alone never implies it.
+        Gate::define('artisan-runner.access', function ($user) {
+            return $user->is_active && (bool) $user->artisan_runner_access;
+        });
+
         // Authenticated users hitting guest pages (/admin/login) go to the
         // admin dashboard instead of the public homepage.
         RedirectIfAuthenticated::redirectUsing(fn () => route('admin.dashboard'));

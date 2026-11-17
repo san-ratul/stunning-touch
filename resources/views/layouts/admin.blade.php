@@ -65,6 +65,7 @@
                         ['account', 'My Account', 'shield', 'admin.account.password'],
                         ['audit', 'Audit Logs', 'shield', 'admin.audit-logs.index'],
                         ['messages', 'Messages', 'doc', 'admin.contact-messages.index'],
+                        ...(\Illuminate\Support\Facades\Gate::allows('artisan-runner.access') ? [['artisan', 'Artisan Runner', 'tools', 'admin.artisan-runner.index']] : []),
                     ],
                 ];
             @endphp

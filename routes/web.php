@@ -159,6 +159,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('contact-messages', [Admin\ContactMessageController::class, 'index'])->name('contact-messages.index');
         Route::delete('contact-messages/{message}', [Admin\ContactMessageController::class, 'destroy'])->name('contact-messages.destroy');
         Route::post('contact-messages/{message}/toggle-read', [Admin\ContactMessageController::class, 'toggleRead'])->name('contact-messages.toggle-read');
+
+        // Artisan Command Runner — dedicated permission, default-deny,
+        // enforced again inside the controller (defense in depth).
+        Route::middleware('can:artisan-runner.access')->group(function () {
+            Route::get('artisan-runner', [Admin\ArtisanRunnerController::class, 'index'])->name('artisan-runner.index');
+            Route::post('artisan-runner/run', [Admin\ArtisanRunnerController::class, 'run'])
+                ->middleware('throttle:30,1')
+                ->name('artisan-runner.run');
+        });
     });
 });
 
