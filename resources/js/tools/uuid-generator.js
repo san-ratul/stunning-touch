@@ -1,3 +1,5 @@
+import { trackToolUsage } from '../analytics';
+
 export function init(el) {
     const countInput = el.querySelector('[data-count]');
     const generateBtn = el.querySelector('[data-generate]');
@@ -50,6 +52,7 @@ export function init(el) {
 
         copyAllBtn.hidden = count <= 1;
         status.textContent = `${count} UUID v${4} value${count > 1 ? 's' : ''} generated.`;
+        trackToolUsage(el.dataset.tool, true);
     });
 
     copyAllBtn.addEventListener('click', async () => {

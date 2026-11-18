@@ -1,3 +1,5 @@
+import { trackToolUsage } from '../analytics';
+
 const transforms = {
     upper: (t) => t.toUpperCase(),
     lower: (t) => t.toLowerCase(),
@@ -21,6 +23,11 @@ export function init(el) {
             output.value = fn(input.value);
             buttons.forEach((b) => b.classList.remove('btn-primary'));
             btn.classList.add('btn-primary');
+
+            // Count real transforms only (a click on empty input changed nothing).
+            if (input.value.trim() !== '') {
+                trackToolUsage(el.dataset.tool, true);
+            }
         });
     });
 

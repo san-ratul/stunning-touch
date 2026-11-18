@@ -1,4 +1,5 @@
 /** Unicode-safe Base64 encode/decode using TextEncoder/TextDecoder. */
+import { trackToolUsage } from '../analytics';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: false });
@@ -31,8 +32,10 @@ export function init(el) {
             if (urlSafe.checked) b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
             output.value = b64;
             setStatus('✓ Encoded successfully.', true);
+            trackToolUsage(el.dataset.tool, true);
         } catch {
             setStatus('Encoding failed.', false);
+            trackToolUsage(el.dataset.tool, false);
         }
     });
 
@@ -46,8 +49,10 @@ export function init(el) {
             const bytes = Uint8Array.from(atob(normalize(raw)), (ch) => ch.charCodeAt(0));
             output.value = decoder.decode(bytes);
             setStatus('✓ Decoded successfully.', true);
+            trackToolUsage(el.dataset.tool, true);
         } catch {
             setStatus('✗ Not valid Base64.', false);
+            trackToolUsage(el.dataset.tool, false);
         }
     });
 

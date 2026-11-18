@@ -1,4 +1,5 @@
 import QRCode from 'qrcode';
+import { trackToolUsage } from '../analytics';
 
 export function init(el) {
     const input = el.querySelector('[data-text]');
@@ -45,9 +46,11 @@ export function init(el) {
             downloadSvg.disabled = false;
             status.textContent = '';
             status.className = 'text-sm text-slate-500';
+            trackToolUsage(el.dataset.tool, true);
         } catch (err) {
             status.textContent = `Could not generate QR code: ${err.message}`;
             status.className = 'text-sm font-medium text-red-600';
+            trackToolUsage(el.dataset.tool, false);
         }
     }
 
@@ -61,6 +64,7 @@ export function init(el) {
             const url = URL.createObjectURL(blob);
             triggerDownload(url, 'qr-code.png');
             setTimeout(() => URL.revokeObjectURL(url), 3000);
+            trackToolUsage(el.dataset.tool, true, 'download');
         }, 'image/png');
     });
 
@@ -69,6 +73,7 @@ export function init(el) {
         const url = URL.createObjectURL(new Blob([currentSvg], { type: 'image/svg+xml' }));
         triggerDownload(url, 'qr-code.svg');
         setTimeout(() => URL.revokeObjectURL(url), 3000);
+        trackToolUsage(el.dataset.tool, true, 'download');
     });
 
     function triggerDownload(url, name) {

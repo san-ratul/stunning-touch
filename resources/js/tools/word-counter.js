@@ -1,3 +1,5 @@
+import { trackToolUsage } from '../analytics';
+
 export function init(el) {
     const input = el.querySelector('[data-input]');
     const statsBox = el.querySelector('[data-stats]');
@@ -55,6 +57,11 @@ export function init(el) {
 
         statsBox.hidden = trimmed === '';
         empty.hidden = trimmed !== '';
+
+        // A real processing run: text was analyzed (server dedupes rapid repeats).
+        if (trimmed !== '') {
+            trackToolUsage(el.dataset.tool, true);
+        }
     }
 
     function animate(node, value) {

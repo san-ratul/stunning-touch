@@ -1,3 +1,5 @@
+import { trackToolUsage } from '../analytics';
+
 export function init(el) {
     const input = el.querySelector('[data-input]');
     const output = el.querySelector('[data-output]');
@@ -25,9 +27,11 @@ export function init(el) {
             output.value = JSON.stringify(parsed, null, 2);
             renderStats(parsed);
             stats.hidden = false;
+            trackToolUsage(el.dataset.tool, true);
         } catch (err) {
             showStatus(`✗ Invalid JSON — ${err.message}`, false);
             stats.hidden = true;
+            trackToolUsage(el.dataset.tool, false);
         }
     }
 
@@ -76,9 +80,11 @@ export function init(el) {
             showStatus('✓ Valid JSON (minified)', true);
             renderStats(parsed);
             stats.hidden = false;
+            trackToolUsage(el.dataset.tool, true);
         } catch (err) {
             showStatus(`✗ Invalid JSON — ${err.message}`, false);
             stats.hidden = true;
+            trackToolUsage(el.dataset.tool, false);
         }
     });
 

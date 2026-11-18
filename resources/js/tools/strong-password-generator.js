@@ -14,6 +14,7 @@ import {
     MIN_LENGTH,
     strengthLabel,
 } from './password-core.js';
+import { trackToolUsage } from '../analytics';
 
 function randomBytes(count) {
     const buffer = new Uint32Array(count);
@@ -109,6 +110,7 @@ export function init(el) {
         if (pool === '' || groups.length === 0) {
             errorState.hidden = false;
             resetAll();
+            trackToolUsage(el.dataset.tool, false);
             return;
         }
 
@@ -118,6 +120,7 @@ export function init(el) {
 
         if (passwords.length === 0) {
             errorState.hidden = false;
+            trackToolUsage(el.dataset.tool, false);
             return;
         }
 
@@ -131,6 +134,7 @@ export function init(el) {
         }
 
         updateStrength();
+        trackToolUsage(el.dataset.tool, true);
     }
 
     function buildPasswordRow(password) {

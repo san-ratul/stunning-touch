@@ -8,6 +8,7 @@
  * - Everything is processed locally; no network requests are made.
  */
 import { debounce } from './helpers.js';
+import { trackToolUsage } from '../analytics';
 import { analyze, MAX_TEXT_LENGTH, parseShorthand } from './regex-core.js';
 import { explainPattern } from './regex-explain.js';
 
@@ -197,6 +198,7 @@ export function init(el) {
         if (result.error) {
             showError(result.error);
             renderLines(result.lines, false);
+            trackToolUsage(el.dataset.tool, false);
             return;
         }
 
@@ -204,6 +206,7 @@ export function init(el) {
         show(resultsBox);
         hide(emptyBox);
         show(statsBox);
+        trackToolUsage(el.dataset.tool, true);
 
         countMatches.textContent = result.matchCount.toLocaleString();
         countLines.textContent = result.fullLineMatches.toLocaleString();
@@ -428,6 +431,7 @@ export function init(el) {
         hide(resultsBox);
         show(emptyBox);
         hide(statsBox);
+        trackToolUsage(el.dataset.tool, false);
     }
 
     function showEmpty() {
