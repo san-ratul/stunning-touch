@@ -22,13 +22,13 @@
     <aside class="admin-sidebar fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col transition-transform duration-200"
            :class="sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'"
            aria-label="Admin navigation">
-        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-white/5 px-5">
+        <div class="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200/80 px-5 dark:border-white/5">
             <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 text-white shadow-lg shadow-brand-600/30">
                 <x-icon name="sparkles" class="h-5 w-5"/>
             </span>
             <div class="leading-tight">
-                <p class="text-sm font-bold text-white">{{ config('app.name') }}</p>
-                <p class="text-[11px] font-medium text-[#7e8dab]">Admin Panel</p>
+                <p class="text-sm font-bold text-slate-900 dark:text-white">{{ config('app.name') }}</p>
+                <p class="text-[11px] font-medium text-slate-500 dark:text-[#7e8dab]">Admin Panel</p>
             </div>
         </div>
 
@@ -96,8 +96,8 @@
                     {{ strtoupper(substr(auth()->user()->name ?? 'A', 0, 1)) }}
                 </span>
                 <div class="min-w-0 leading-tight">
-                    <p class="truncate text-sm font-semibold text-white">{{ auth()->user()->name ?? 'Admin' }}</p>
-                    <p class="truncate text-[11px] text-[#7e8dab]">{{ auth()->user()?->email }}</p>
+                    <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ auth()->user()->name ?? 'Admin' }}</p>
+                    <p class="truncate text-[11px] text-slate-500 dark:text-[#7e8dab]">{{ auth()->user()?->email }}</p>
                 </div>
             </div>
             <div class="flex gap-2 px-1 pt-1">
@@ -121,12 +121,12 @@
 
     {{-- Main --}}
     <div class="flex min-w-0 flex-1 flex-col lg:pl-[264px]">
-        <header class="admin-topbar sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-6">
+        <header class="admin-topbar sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 sm:px-6 dark:border-white/5 dark:bg-[#0d1526]">
             <div class="flex items-center gap-3">
                 <button type="button" class="btn-ghost px-2 lg:hidden" @click="sidebarOpen = !sidebarOpen" aria-label="Toggle sidebar">
                     <x-icon name="menu" class="h-6 w-6"/>
                 </button>
-                <h1 class="truncate text-lg font-bold text-slate-900">@yield('title', 'Dashboard')</h1>
+                <h1 class="truncate text-lg font-bold text-slate-900 dark:text-slate-100">@yield('title', 'Dashboard')</h1>
             </div>
             <div class="flex items-center gap-1.5" x-data="{ menu: false }">
                 @include('partials.theme-toggle')
@@ -140,17 +140,17 @@
                         </span>
                     </button>
                     <div x-show="menu" x-cloak x-transition.opacity.duration.150ms @click.outside="menu = false"
-                         class="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-                        <div class="border-b border-slate-100 px-3 pb-2 pt-1.5">
-                            <p class="truncate text-sm font-semibold text-slate-900">{{ auth()->user()->name ?? 'Admin' }}</p>
-                            <p class="truncate text-xs text-slate-500">{{ auth()->user()?->email }}</p>
+                         class="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+                        <div class="border-b border-slate-100 px-3 pb-2 pt-1.5 dark:border-slate-700">
+                            <p class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{{ auth()->user()->name ?? 'Admin' }}</p>
+                            <p class="truncate text-xs text-slate-500 dark:text-slate-400">{{ auth()->user()?->email }}</p>
                         </div>
-                        <a href="{{ route('admin.account.password') }}" class="mt-1 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100">
+                        <a href="{{ route('admin.account.password') }}" class="mt-1 block w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700">
                             Change password
                         </a>
                         <form method="POST" action="{{ route('admin.logout') }}">
                             @csrf
-                            <button type="submit" class="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50">Sign out</button>
+                            <button type="submit" class="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10">Sign out</button>
                         </form>
                     </div>
                 </div>

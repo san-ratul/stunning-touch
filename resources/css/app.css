@@ -587,7 +587,7 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 }
 
 /* ============================================================
-   ADMIN SIDEBAR (always-dark navy, both themes)
+   ADMIN SIDEBAR (theme-aware: light by default, navy in dark)
    ============================================================ */
 
 .admin-body {
@@ -599,10 +599,53 @@ html.dark .admin-body {
 }
 
 .admin-sidebar {
+    /* Light theme palette (default). */
+    --sidebar-accent: rgba(97, 113, 244, 0.10);
+    --sidebar-bg-top: #ffffff;
+    --sidebar-bg-bottom: #f4f6fb;
+    --sidebar-edge: rgba(15, 23, 42, 0.08);
+    --sidebar-divider: rgba(15, 23, 42, 0.08);
+    --sidebar-user-bg: rgba(15, 23, 42, 0.02);
+    --sidebar-label: #94a3b8;
+    --sidebar-link: #334155;
+    --sidebar-link-hover-bg: rgba(15, 23, 42, 0.05);
+    --sidebar-link-hover: #0f172a;
+    --sidebar-active-bg: linear-gradient(90deg, rgba(97, 113, 244, 0.14), rgba(168, 85, 247, 0.08));
+    --sidebar-active-text: #4338ca;
+    --sidebar-active-bar: linear-gradient(180deg, #6366f1, #a855f7);
+    --sidebar-action-border: rgba(15, 23, 42, 0.12);
+    --sidebar-action-hover-bg: rgba(15, 23, 42, 0.06);
+    --sidebar-action-hover: #0f172a;
+    --sidebar-danger-hover-bg: rgba(239, 68, 68, 0.10);
+    --sidebar-danger-hover-border: rgba(239, 68, 68, 0.30);
+    --sidebar-danger-hover-text: #b91c1c;
+
     background:
-        radial-gradient(420px 260px at 0% 0%, rgba(97, 113, 244, 0.16), transparent 70%),
-        linear-gradient(180deg, #111b31 0%, #0a1122 100%);
-    box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05);
+        radial-gradient(420px 260px at 0% 0%, var(--sidebar-accent), transparent 70%),
+        linear-gradient(180deg, var(--sidebar-bg-top) 0%, var(--sidebar-bg-bottom) 100%);
+    box-shadow: inset -1px 0 0 var(--sidebar-edge);
+}
+
+html.dark .admin-sidebar {
+    --sidebar-accent: rgba(97, 113, 244, 0.16);
+    --sidebar-bg-top: #111b31;
+    --sidebar-bg-bottom: #0a1122;
+    --sidebar-edge: rgba(255, 255, 255, 0.05);
+    --sidebar-divider: rgba(255, 255, 255, 0.08);
+    --sidebar-user-bg: rgba(255, 255, 255, 0.02);
+    --sidebar-label: #5d6e93;
+    --sidebar-link: #bcc8de;
+    --sidebar-link-hover-bg: rgba(255, 255, 255, 0.05);
+    --sidebar-link-hover: #ffffff;
+    --sidebar-active-bg: linear-gradient(90deg, rgba(97, 113, 244, 0.3), rgba(168, 85, 247, 0.14));
+    --sidebar-active-text: #ffffff;
+    --sidebar-active-bar: linear-gradient(180deg, #7e98fa, #c084fc);
+    --sidebar-action-border: rgba(255, 255, 255, 0.1);
+    --sidebar-action-hover-bg: rgba(255, 255, 255, 0.06);
+    --sidebar-action-hover: #ffffff;
+    --sidebar-danger-hover-bg: rgba(239, 68, 68, 0.15);
+    --sidebar-danger-hover-border: rgba(239, 68, 68, 0.35);
+    --sidebar-danger-hover-text: #fca5a5;
 }
 
 .sidebar-label {
@@ -611,7 +654,7 @@ html.dark .admin-body {
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #5d6e93;
+    color: var(--sidebar-label);
 }
 
 .sidebar-link {
@@ -624,19 +667,19 @@ html.dark .admin-body {
     border-radius: 0.7rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #bcc8de;
+    color: var(--sidebar-link);
     transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .sidebar-link:hover {
-    background-color: rgba(255, 255, 255, 0.05);
-    color: #ffffff;
+    background-color: var(--sidebar-link-hover-bg);
+    color: var(--sidebar-link-hover);
     transform: translateX(2px);
 }
 
 .sidebar-link.active {
-    background: linear-gradient(90deg, rgba(97, 113, 244, 0.3), rgba(168, 85, 247, 0.14));
-    color: #ffffff;
+    background: var(--sidebar-active-bg);
+    color: var(--sidebar-active-text);
     font-weight: 600;
 }
 
@@ -648,12 +691,12 @@ html.dark .admin-body {
     bottom: 22%;
     width: 3px;
     border-radius: 999px;
-    background: linear-gradient(180deg, #7e98fa, #c084fc);
+    background: var(--sidebar-active-bar);
 }
 
 .sidebar-user {
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.02);
+    border-top: 1px solid var(--sidebar-divider);
+    background: var(--sidebar-user-bg);
 }
 
 .sidebar-action {
@@ -664,23 +707,23 @@ html.dark .admin-body {
     gap: 0.35rem;
     padding: 0.4rem 0.6rem;
     border-radius: 0.6rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--sidebar-action-border);
     font-size: 0.75rem;
     font-weight: 600;
-    color: #bcc8de;
+    color: var(--sidebar-link);
     cursor: pointer;
     transition: all 0.15s ease;
 }
 
 .sidebar-action:hover {
-    background-color: rgba(255, 255, 255, 0.06);
-    color: #ffffff;
+    background-color: var(--sidebar-action-hover-bg);
+    color: var(--sidebar-action-hover);
 }
 
 .sidebar-action-danger:hover {
-    background-color: rgba(239, 68, 68, 0.15);
-    border-color: rgba(239, 68, 68, 0.35);
-    color: #fca5a5;
+    background-color: var(--sidebar-danger-hover-bg);
+    border-color: var(--sidebar-danger-hover-border);
+    color: var(--sidebar-danger-hover-text);
 }
 
 /* ============================================================
