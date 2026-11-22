@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use App\Models\AutomationSetting;
 use App\Models\BlogPost;
 use App\Models\Category;
+use App\Models\PipelineRun;
 use App\Models\ResearchSetting;
 use App\Models\Tool;
 use App\Services\Ai\DuplicateDetectorService;
@@ -221,6 +222,68 @@ XML;
         ]])->findEligibleTopic(threshold: 50);
 
         $this->assertNull($eligible, 'Exhausted topic lists must not be silently reused.');
+    }
+
+    public function test_topics_covered_by_completed_runs_are_not_picked_again(): void
+    {
+        PipelineRun::create([
+            'slot_date' => '2026-11-22',
+            'slot' => '06:00',
+            'status' => PipelineRun::STATUS_COMPLETED,
+            'step' => 'finalized',
+            'completed_steps' => ['finalized'],
+            'topic' => 'Latest AI tools and technology updates',
+            'attempts' => 1,
+            'started_at' => now()->subHours(2),
+            'finished_at' => now()->subHours(1),
+        ]);
+
+        $eligible = $this->discovery(['topics' => [
+            'Latest AI tools and technology updates',
+            'How to merge PDF files online without installing software',
+        ]])->findEligibleTopic();
+
+        $this->assertNotNull($eligible, 'An unused topic must still be found.');
+        $this->assertStringContainsString('merge PDF', $eligible['topic'], 'A topic that already produced a completed run must be skipped.');
+    }
+
+    public function test_ai_post_titles_block_their_source_topic(): void
+    {
+        // AI articles get their own generated titles, so the configured
+        // topic can only be blocked by remembering the title it produced.
+        $this->makePost([
+            'title' => 'How to merge PDF files online',
+            'slug' => 'merge-pdf-online',
+            'source' => 'ai',
+        ]);
+
+        $eligible = $this->discovery(['topics' => [
+            'How to merge PDF files online',
+            'How to split PDF files easily',
+        ]])->findEligibleTopic();
+
+        $this->assertNotNull($eligible);
+        $this->assertStringContainsString('split PDF', $eligible['topic']);
+    }
+
+    public function test_failed_runs_do_not_burn_topics(): void
+    {
+        PipelineRun::create([
+            'slot_date' => '2026-11-22',
+            'slot' => '06:00',
+            'status' => PipelineRun::STATUS_FAILED,
+            'step' => 'research',
+            'completed_steps' => [],
+            'topic' => 'How to merge PDF files online',
+            'attempts' => 1,
+            'started_at' => now()->subHours(2),
+            'finished_at' => now()->subHours(1),
+            'error_message' => 'transient research failure',
+        ]);
+
+        $eligible = $this->discovery(['topics' => ['How to merge PDF files online']])->findEligibleTopic();
+
+        $this->assertNotNull($eligible, 'A failed attempt must not permanently consume the topic.');
     }
 
     public function test_content_gaps_suggest_topics_for_uncovered_tools(): void

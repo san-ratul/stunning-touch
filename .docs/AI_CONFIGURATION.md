@@ -34,12 +34,12 @@ A structured JSON article: title, slug, excerpt, HTML content (900–1400 words 
 | Enable | Master switch for scheduled generation |
 | Frequency | Daily or Weekly (Mondays) |
 | Preferred time + timezone | Default 09:05, Asia/Dhaka |
-| Topics | One per line; the generator avoids repeating the 5 most recent AI topics |
+| Topics | One per line; treated as a shuffled pool — every subject generates at most once (completed runs and AI article titles are never re-picked), and the generator avoids repeating the 20 most recent AI titles |
 | Keyword preferences | Fed into the prompt |
 | Target categories | Given to the prompt; first one is the fallback category |
 | Auto-publish | OFF by default — see Safety |
 
-The schedule runs via Laravel Scheduler (`routes/console.php`): `blog:generate-daily` at the preferred time with `withoutOverlapping` + `onOneServer` locking, and skips if a generation already completed that day. Requires the hosting cron (see CRON_SETUP.md).
+The schedule runs via Laravel Scheduler (`routes/console.php`): `blog:auto-pipeline` every five minutes with `withoutOverlapping` + `onOneServer` locking. Each tick runs at most one bounded article attempt for the earliest due publishing slot (from `publish_slots` / `posts_per_day` / timezone); the preferred time and frequency remain advisory for the legacy `blog:generate-daily` command. Requires the hosting cron (see CRON_SETUP.md). With auto-publish ON, articles publish only when every mandatory quality check passes — failures stay drafts and the reason is visible under Recent Pipeline Activity and Admin → Monitoring.
 
 ## Required credentials
 Only one: the API key from your chosen provider, entered in the admin panel (or it can live in `AI_*` env variables if you prefer). No keys are hardcoded; without a key, all AI features degrade gracefully and the rest of the platform is unaffected.

@@ -5,6 +5,7 @@ namespace App\Services\Ai;
 use App\Models\AutomationSetting;
 use App\Models\BlogCategory;
 use App\Models\BlogPost;
+use App\Models\PipelineRun;
 use App\Models\Tool;
 use App\Services\Research\ResearchResult;
 use App\Services\Research\ResearchService;
@@ -34,14 +35,24 @@ class TopicDiscoveryService
     /**
      * Find the first eligible topic (passing duplicate checks), or null.
      *
+     * Candidates are randomized (manual topics are shuffled) and any subject
+     * already covered by a completed pipeline run or an existing AI article
+     * is skipped, so the same topic is never generated twice while unused
+     * topics remain.
+     *
      * @return array{topic: string, source: string, meta: array}|null
      */
     public function findEligibleTopic(?AutomationSetting $automation = null, ?int $threshold = null): ?array
     {
         $automation ??= AutomationSetting::current();
+        $used = $this->recentlyUsedSubjects();
 
         foreach ($this->discover($automation) as $candidate) {
             $topic = (string) $candidate['topic'];
+
+            if ($used->contains($this->normalize($topic))) {
+                continue;
+            }
 
             $analysis = $this->duplicates->analyze(
                 title: $topic,
@@ -56,6 +67,34 @@ class TopicDiscoveryService
         }
 
         return null;
+    }
+
+    /**
+     * Subjects that already produced (or informed) an AI article: topics of
+     * completed pipeline runs and titles of AI-generated posts. A generated
+     * article's title usually differs from its configured topic, so both
+     * sets are required to prevent near-duplicate rewrites of the same
+     * subject.
+     */
+    protected function recentlyUsedSubjects(): Collection
+    {
+        $fromRuns = PipelineRun::query()
+            ->where('status', PipelineRun::STATUS_COMPLETED)
+            ->orderByDesc('id')
+            ->limit(200)
+            ->pluck('topic');
+
+        $fromPosts = BlogPost::query()
+            ->where('source', 'ai')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->pluck('title');
+
+        return $fromRuns->merge($fromPosts)
+            ->map(fn ($subject) => $this->normalize((string) $subject))
+            ->filter(fn ($subject) => $subject !== '')
+            ->unique()
+            ->values();
     }
 
     /**
@@ -88,14 +127,16 @@ class TopicDiscoveryService
             $candidates->push(['topic' => $topic, 'source' => $source, 'meta' => $meta]);
         };
 
-        // 1. Admin-configured manual topics (highest intent).
-        foreach ((array) ($automation->topics ?? []) as $topic) {
+        // 1. Admin-configured manual topics (highest intent), shuffled so
+        // the list order never decides what gets generated — otherwise the
+        // first topic would repeat until exhausted.
+        foreach (collect((array) ($automation->topics ?? []))->filter()->shuffle()->values() as $topic) {
             $push((string) $topic, 'manual', []);
         }
 
         // 2. Content gaps: active tools with no related blog posts.
-        foreach ($this->contentGaps() as $topic) {
-            $push($topic, 'content_gap', []);
+        foreach (collect($this->contentGaps())->shuffle()->values() as $topic) {
+            $push((string) $topic, 'content_gap', []);
         }
 
         // 3. RSS-derived topics.

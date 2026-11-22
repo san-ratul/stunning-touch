@@ -12,6 +12,7 @@ use App\Models\Tool;
 use App\Services\Research\ResearchResult;
 use App\Services\Research\ResearchService;
 use App\Support\SiteUrl;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -331,18 +332,29 @@ PROMPT;
 
     protected function pickTopic(AutomationSetting $automation): ?string
     {
-        $topics = collect($automation->topics ?? [])->filter()->values();
+        // Random order: the admin list is a pool, not a priority queue —
+        // always taking the first entry would regenerate the same subject.
+        $topics = collect($automation->topics ?? [])->filter()->shuffle()->values();
 
         if ($topics->isEmpty()) {
             return null;
         }
 
-        // Avoid repeating recent article topics.
-        $recent = BlogPost::query()->where('source', 'ai')->orderByDesc('created_at')->limit(5)->pluck('title');
+        // Avoid repeating recent article subjects (normalized comparison:
+        // the generated title usually differs from the configured topic).
+        $recent = BlogPost::query()->where('source', 'ai')->orderByDesc('created_at')->limit(20)->pluck('title')
+            ->map(fn ($title) => trim((string) preg_replace('/\s+/', ' ', Str::lower(trim((string) $title)))));
 
-        $unused = $topics->reject(fn ($topic) => $recent->contains(fn ($title) => Str::lower($title) === Str::lower($topic)));
+        $normalizedTopics = $topics->mapWithKeys(fn ($topic) => [$this->normalizeTopic((string) $topic) => $topic]);
 
-        return ($unused->isNotEmpty() ? $unused : $topics)->first();
+        $unused = $normalizedTopics->reject(fn ($topic, $normalized) => $recent->contains($normalized));
+
+        return ($unused->isNotEmpty() ? $unused : $normalizedTopics)->first();
+    }
+
+    protected function normalizeTopic(string $text): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', Str::lower(trim($text))));
     }
 
     protected function buildPrompt(string $topic, AutomationSetting $automation, $tools, $categories, Collection $researchResults, array $context = []): string
@@ -370,8 +382,9 @@ PROMPT;
                 ->take(8)
                 ->map(function (ResearchResult $r, int $i) {
                     $snippet = filled($r->snippet) ? "\n    {$r->snippet}" : '';
+                    $stamp = $this->sourceDateLabel($r);
 
-                    return '['.($i + 1)."] ({$r->sourceType}) \"{$r->title}\" — {$r->url}{$snippet}";
+                    return '['.($i + 1)."] ({$r->sourceType}{$stamp}) \"{$r->title}\" — {$r->url}{$snippet}";
                 })
                 ->implode("\n");
 
@@ -407,10 +420,13 @@ RESEARCH_BLOCK;
         }
 
         $siteUrl = SiteUrl::base();
+        $today = now($automation->timezone ?: config('app.timezone'));
+        $todayLine = 'Today is '.$today->format('l, F j, Y').'.';
+        $monthYear = $today->format('F Y');
 
         return <<<PROMPT
 Write a complete SEO-friendly blog article for the topic: "{$topic}"
-{$researchSection}{$keywordSection}{$adminSection}
+{$todayLine}{$researchSection}{$keywordSection}{$adminSection}
 
 Site context: Stunning Touch ({$siteUrl}) is a free online tools platform with the tagline "Your Everyday Tools, All in One Place.". Blog categories available: {$categoryNames}. Keyword preferences: {$keywords}
 
@@ -419,6 +435,9 @@ Available tools for internal linking (choose the most relevant 1-4, only if genu
 
 Requirements:
 {$lengthRequirement}
+- Write from the perspective of {$today->format('F j, Y')}. NEVER present older releases, model versions, prices, rankings, or events as if they are current.
+- If the topic involves news, latest updates, or trends, cover ONLY the most recent developments (latest launches and improvements). Base them on the newest research extracts and prefer precise wording like "as of {$monthYear}".
+- For news-style topics ignore clearly outdated extracts (older years, past-year roundups); use them as background at most, never as current facts. Never describe past years as the present.
 - NEVER fabricate statistics, research findings, quotes, or search volumes. General advice and verifiable facts only.
 - Use clean HTML content: h2/h3 headings, paragraphs, ul/li lists. Start directly with an introduction paragraph (no h1).
 - Include 2-4 natural internal links to relevant tools chosen ONLY from the list above, using absolute URLs of the exact form {$siteUrl}/{tool-slug} (tool slugs come from the list above). Every article must contain at least 2 internal links. NEVER invent URLs or link to pages that do not exist on the site.
@@ -441,6 +460,27 @@ Respond with ONLY valid JSON (no markdown fences) in this exact shape:
   "outline": ["h2 item 1", "..."]
 }
 PROMPT;
+    }
+
+    /**
+     * Human-readable publication date for a research extract, when the
+     * provider supplied one — so the model can judge source freshness.
+     */
+    protected function sourceDateLabel(ResearchResult $result): string
+    {
+        $raw = (string) ($result->meta['created_at'] ?? $result->meta['published'] ?? '');
+
+        if (blank($raw)) {
+            return '';
+        }
+
+        try {
+            $date = Carbon::parse($raw);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        return ', '.$date->format('M Y');
     }
 
     protected function parseJson(string $raw): array

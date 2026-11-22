@@ -8,12 +8,20 @@ bounded article attempt per invocation:
 1. **Slot check** — the earliest due slot from `automation_settings.publish_slots`
    (in the configured timezone) that has no completed run today.
 2. **Daily limit** — completed runs today must be below `posts_per_day` (hard cap 4).
-3. **Topic discovery** — manual topics, content gaps (tools/categories without
-   coverage), RSS items, and external research discoveries, screened through
+3. **Topic discovery** — manual topics (shuffled: the list is a pool, not a
+   priority queue), content gaps (tools/categories without coverage), RSS
+   items, and external research discoveries, screened through
    `DuplicateDetectorService` (threshold from settings, default 85%).
+   Subjects already covered by a completed pipeline run or an existing
+   AI-generated article title are never picked again, so the same topic
+   cannot repeat while unused topics remain. Failed runs do not consume
+   their topic.
 4. **Research** — Wikipedia + Hacker News + RSS + optional web search
    (`ResearchService`). If no sources are collected, the run fails without
-   burning AI tokens.
+   burning AI tokens. News-style topics (latest/news/updates/trends…) are
+   researched with a 90-day recency window on Hacker News (falling back to
+   an unfiltered search when empty), so articles never cite years-old
+   stories as current news.
 5. **Keywords** — `KeywordService` derives focus/secondary keywords and search
    intent from real data. Volumes are never fabricated.
 6. **Generation** — `BlogGeneratorService` writes the article with research

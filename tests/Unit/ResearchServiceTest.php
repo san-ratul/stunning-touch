@@ -74,6 +74,77 @@ class ResearchServiceTest extends TestCase
         $this->assertEquals('hackernews', $results[0]->sourceType);
     }
 
+    public function test_news_topics_research_only_recent_hackernews_stories(): void
+    {
+        $this->configureResearch();
+        Http::fake([
+            'https://hn.algolia.com/api/v1/search*' => Http::response([
+                'hits' => [
+                    [
+                        'objectID' => '99',
+                        'title' => 'New AI model launched this week',
+                        'url' => 'https://example.com/launch',
+                        'created_at' => '2026-11-15T10:00:00Z',
+                        'points' => 50,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $service = app(ResearchService::class);
+
+        $this->assertTrue($service->isNewsLikeTopic('Latest AI tools and technology updates'));
+        $this->assertFalse($service->isNewsLikeTopic('How to merge PDF files online'));
+        $this->assertFalse($service->isNewsLikeTopic('How to create strong passwords'));
+
+        $results = $service->fromHackerNews('latest ai tools', 3, 90);
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'numericFilters=created_at_i'));
+        $this->assertCount(1, $results);
+        $this->assertSame('2026-11-15T10:00:00Z', $results[0]->meta['created_at']);
+    }
+
+    public function test_news_topic_research_falls_back_when_recent_window_is_empty(): void
+    {
+        $this->configureResearch();
+
+        // The specific pattern must be registered first so the recent-window
+        // request matches it; the fallback request matches the broader one.
+        Http::fake([
+            'https://hn.algolia.com/api/v1/search?*numericFilters*' => Http::response(['hits' => []]),
+            'https://hn.algolia.com/api/v1/search*' => Http::response([
+                'hits' => [
+                    ['objectID' => '7', 'title' => 'Relevant AI story from the broader index', 'url' => 'https://example.com/fallback'],
+                ],
+            ]),
+            '*' => Http::response(''),
+        ]);
+
+        $results = app(ResearchService::class)->researchForTopic('Latest AI tools and technology updates')['results'];
+
+        $this->assertGreaterThanOrEqual(1, $results->count());
+        $this->assertTrue($results->contains(fn (ResearchResult $r) => $r->url === 'https://example.com/fallback'), 'The unfiltered fallback must supply sources when the recent window is empty.');
+        Http::assertSent(fn ($request) => str_starts_with($request->url(), 'https://hn.algolia.com/api/v1/search'));
+    }
+
+    public function test_evergreen_topics_are_not_recency_filtered(): void
+    {
+        $this->configureResearch();
+
+        Http::fake([
+            'https://hn.algolia.com/api/v1/search*' => Http::response([
+                'hits' => [
+                    ['objectID' => '8', 'title' => 'Deep dive into PDF tooling', 'url' => 'https://example.com/pdf'],
+                ],
+            ]),
+            '*' => Http::response(''),
+        ]);
+
+        app(ResearchService::class)->researchForTopic('How to merge PDF files online');
+
+        Http::assertSent(fn ($request) => ! str_contains($request->url(), 'numericFilters'));
+    }
+
     public function test_rss_feeds_are_parsed(): void
     {
         $this->configureResearch([

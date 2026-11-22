@@ -108,6 +108,55 @@ class AutoPipelineTest extends TestCase
 
         $this->assertNull(app(BlogAutoPipeline::class)->run());
         $this->assertEquals(0, PipelineRun::count());
+        $this->assertNull(AutomationSetting::query()->first()->last_run_at, 'No slot executed, so Last run must stay unset.');
+    }
+
+    public function test_executed_slot_updates_last_run_at_even_when_generation_fails(): void
+    {
+        Carbon::setTestNow('2026-11-17 13:00:00');
+        $this->seedProvider();
+
+        Http::fake([
+            'https://en.wikipedia.org/*' => Http::response('down', 500),
+            'https://hn.algolia.com/*' => Http::response('down', 500),
+            '*' => Http::response('down', 500),
+        ]);
+
+        $this->enableAutomation();
+
+        $run = app(BlogAutoPipeline::class)->run();
+
+        $this->assertNotNull($run);
+        $this->assertEquals('failed', $run->status);
+        $this->assertNotNull(
+            AutomationSetting::query()->first()->last_run_at,
+            'An executed attempt proves the cron is alive even when the run failed.'
+        );
+    }
+
+    public function test_blocked_auto_publish_records_reason_and_last_run(): void
+    {
+        Carbon::setTestNow('2026-11-17 13:00:00');
+        $this->seedProvider();
+        $this->fakePipelineHttp([
+            'slug' => 'pipeline-short-article',
+            'title' => 'Short Pipeline Article',
+            'content_html' => '<h2>Heading</h2><p>'.trim(str_repeat('word ', 40)).'</p>',
+            'focus_keyword' => 'word',
+        ]);
+        $this->enableAutomation(['auto_publish' => true]);
+
+        $run = app(BlogAutoPipeline::class)->run();
+
+        $this->assertNotNull($run);
+        $this->assertEquals('completed', $run->status);
+        $this->assertFalse($run->published);
+        $this->assertStringContainsString(
+            'Auto-publish blocked by quality validation',
+            (string) $run->error_message,
+            'The reason a generated article stayed a draft must be visible to admins.'
+        );
+        $this->assertNotNull(AutomationSetting::query()->first()->last_run_at);
     }
 
     public function test_generates_draft_for_due_slot_with_research_provenance(): void
@@ -236,10 +285,85 @@ class AutoPipelineTest extends TestCase
         $this->assertStringContainsString('No eligible topic', (string) $run->error_message);
     }
 
+    public function test_pipeline_rotates_topics_instead_of_repeating(): void
+    {
+        $this->seedProvider();
+        $this->fakePipelineHttp();
+        $this->enableAutomation([
+            'posts_per_day' => 2,
+            'topics' => [
+                'How to convert text case online',
+                'Merge PDF files without installing software',
+            ],
+        ]);
+
+        $pipeline = app(BlogAutoPipeline::class);
+
+        Carbon::setTestNow('2026-11-17 13:00:00');
+        $first = $pipeline->run();
+        $this->assertNotNull($first);
+        $this->assertEquals('completed', $first->status);
+
+        Carbon::setTestNow('2026-11-17 19:00:00');
+        $second = $pipeline->run();
+        $this->assertNotNull($second);
+        $this->assertEquals('completed', $second->status);
+
+        $this->assertNotSame(
+            trim((string) $first->topic),
+            trim((string) $second->topic),
+            'The pipeline must rotate topics: a completed slot\'s topic may not be repeated while unused topics remain.'
+        );
+        $this->assertEquals('06:00', $first->slot);
+        $this->assertEquals('12:00', $second->slot);
+    }
+
     public function test_daily_limit_is_enforced_across_slots(): void
     {
         $this->seedProvider();
-        $this->fakePipelineHttp(['slug' => 'limit-article-one']);
+
+        $payload = fn (string $title, string $slug, string $keyword) => [
+            'title' => $title,
+            'slug' => $slug,
+            'excerpt' => 'A guide.',
+            'content_html' => $this->validArticleContent(),
+            'focus_keyword' => $keyword,
+            'secondary_keywords' => [],
+            'seo_title' => $title,
+            'meta_description' => 'Learn more about it.',
+            'blog_category' => 'Productivity',
+        ];
+
+        // Each slot generates for its own topic: the fake inspects the
+        // prompt body and returns a matching payload, so no fixed title can
+        // collide with the other topic during discovery.
+        Http::fake(function ($request) use ($payload) {
+            if (str_contains((string) $request->url(), 'chat/completions')) {
+                $isMerge = str_contains((string) $request->body(), 'Merge PDF files');
+
+                $article = $isMerge
+                    ? $payload('Merge PDF Files Without Installing Software', 'limit-article-merge', 'merge pdf files')
+                    : $payload('How to Convert Text Case Online', 'limit-article-case', 'convert text case');
+
+                return Http::response([
+                    'choices' => [['message' => ['content' => json_encode($article)]]],
+                    'usage' => ['prompt_tokens' => 900, 'completion_tokens' => 1200],
+                ]);
+            }
+
+            if (str_contains((string) $request->url(), 'stunningtouch.com')) {
+                return Http::response('', 200);
+            }
+
+            if (str_contains((string) $request->url(), 'hn.algolia.com')) {
+                return Http::response([
+                    'hits' => [['objectID' => '77', 'title' => 'Research extract about pdf tools', 'url' => 'https://research.example.com/pdf', 'points' => 10]],
+                ]);
+            }
+
+            return Http::response('');
+        });
+
         $this->enableAutomation([
             'posts_per_day' => 2,
             'topics' => [
@@ -253,7 +377,11 @@ class AutoPipelineTest extends TestCase
         Carbon::setTestNow('2026-11-17 13:00:00');
         $runOne = $pipeline->run();
         $this->assertEquals('06:00', $runOne->slot);
-        $this->assertEquals('completed', $runOne->status);
+        $this->assertEquals(
+            'completed',
+            $runOne->status,
+            'RunOne error: '.(string) $runOne->error_message
+        );
 
         Carbon::setTestNow('2026-11-17 19:00:00');
         $runTwo = $pipeline->run();

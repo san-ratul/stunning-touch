@@ -60,9 +60,22 @@ class ResearchService
         $results = collect();
         $errors = [];
 
+        // News-style topics must draw on recent stories, not years-old
+        // hits: restrict Hacker News to a recent window, falling back to an
+        // unfiltered search when the window yields nothing.
+        $recentDays = $this->isNewsLikeTopic($topic) ? 90 : null;
+
         $fetchers = [
             'wikipedia' => fn () => $this->fromWikipedia($topic, $limit),
-            'hackernews' => fn () => $this->fromHackerNews($topic, $limit),
+            'hackernews' => function () use ($topic, $limit, $recentDays) {
+                $hits = $this->fromHackerNews($topic, $limit, $recentDays);
+
+                if ($recentDays !== null && $hits->isEmpty()) {
+                    $hits = $this->fromHackerNews($topic, $limit);
+                }
+
+                return $hits;
+            },
             'rss' => fn () => $this->fromRssFeeds($limit),
             'web' => fn () => $this->fromWebSearch($topic, $limit),
         ];
@@ -162,16 +175,26 @@ class ResearchService
     /**
      * Hacker News (Algolia) story search. Stories without an external URL
      * fall back to their Hacker News item URL (derived from the objectID).
+     *
+     * When $recentDays is given, only stories created within that window are
+     * requested (numericFilters on created_at_i) — used for news-style
+     * topics so articles never cite years-old stories as current news.
      */
-    public function fromHackerNews(string $query, int $limit): Collection
+    public function fromHackerNews(string $query, int $limit, ?int $recentDays = null): Collection
     {
+        $params = [
+            'query' => $query,
+            'tags' => 'story',
+            'hitsPerPage' => $limit,
+        ];
+
+        if ($recentDays !== null && $recentDays > 0) {
+            $params['numericFilters'] = 'created_at_i>'.now()->subDays($recentDays)->timestamp;
+        }
+
         $response = Http::timeout(self::HTTP_TIMEOUT)
             ->connectTimeout(self::CONNECT_TIMEOUT)
-            ->get('https://hn.algolia.com/api/v1/search', [
-                'query' => $query,
-                'tags' => 'story',
-                'hitsPerPage' => $limit,
-            ]);
+            ->get('https://hn.algolia.com/api/v1/search', $params);
 
         if ($response->failed()) {
             throw new \RuntimeException('Hacker News API error '.$response->status());
@@ -190,7 +213,11 @@ class ResearchService
                     snippet: $this->cleanSnippet($hit['story_text'] ?? $hit['comment_text'] ?? $hit['_highlightResult']['title']['value'] ?? ''),
                     sourceType: 'hackernews',
                     fetchedAt: now()->toIso8601String(),
-                    meta: ['points' => $hit['points'] ?? null, 'author' => $hit['author'] ?? null],
+                    meta: [
+                        'points' => $hit['points'] ?? null,
+                        'author' => $hit['author'] ?? null,
+                        'created_at' => $hit['created_at'] ?? null,
+                    ],
                 );
             })
             ->filter(fn (ResearchResult $r) => filled($r->url));
@@ -367,6 +394,19 @@ class ResearchService
                 fn ($domain) => $host === $domain || str_ends_with((string) $host, '.'.$domain)
             );
         })->values();
+    }
+
+    /**
+     * Topics about news, updates, or trends must draw on recent sources.
+     * Evergreen how-to topics are intentionally not matched — their best
+     * research may legitimately be older.
+     */
+    public function isNewsLikeTopic(string $topic): bool
+    {
+        return (bool) preg_match(
+            '/\b(latest|news|updates?|trends?|new(est)?|recent\w*|launch\w*|releas\w*|announc\w*|developments?|innovations?|breaking|this (?:week|month|year))\b/i',
+            $topic,
+        );
     }
 
     /**
