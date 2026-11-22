@@ -63,7 +63,16 @@ class BlogAutoPipeline
             return null;
         }
 
-        return $this->executeSlot($automation, $slot, $now->copy());
+        $run = $this->executeSlot($automation, $slot, $now->copy());
+
+        // The admin automation page shows "Last run" and warns when the
+        // schedule appears dead. Every executed slot attempt — success or
+        // failure — proves the cron is alive, so record it.
+        if ($run !== null) {
+            AutomationSetting::query()->update(['last_run_at' => now()]);
+        }
+
+        return $run;
     }
 
     /**
@@ -210,6 +219,9 @@ class BlogAutoPipeline
 
             // 6. Finalize. Publication (if any) was decided by the
             // validation-gated auto-publish logic inside the generator.
+            // When auto-publish was expected but the article stayed a
+            // draft, keep the generator's reason on the run so admins can
+            // see why in monitoring instead of guessing.
             $run->update([
                 'blog_post_id' => $post->id,
                 'ai_generation_id' => $generationId,
@@ -217,7 +229,7 @@ class BlogAutoPipeline
                 'status' => PipelineRun::STATUS_COMPLETED,
                 'step' => 'finalized',
                 'finished_at' => now(),
-                'error_message' => null,
+                'error_message' => $post->status === 'published' ? null : ($result['message'] ?? null),
             ]);
 
             AuditLog::record(

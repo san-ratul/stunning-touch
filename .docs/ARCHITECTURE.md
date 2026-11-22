@@ -82,8 +82,10 @@ routes/
 ## Scheduling (no daemons)
 
 `routes/console.php` registers:
-- `blog:generate-daily` daily at 09:05 (automation timezone), `withoutOverlapping` + `onOneServer`.
+- `blog:auto-pipeline` every five minutes: at most one bounded article attempt per due publishing slot (slots/limit/timezone from `automation_settings`), `withoutOverlapping` + `onOneServer`.
+- `blog:publish-scheduled` every minute, same guards.
 - `analytics:aggregate --cleanup` daily at 03:15, same guards.
+- `blog:cleanup-history` weekly Mondays 04:45, same guards.
 
 Hosts trigger `schedule:run` per cron minute, or the protected `GET /run-scheduler/{secret}` endpoint (secret from `SCHEDULER_SECRET`, throttled 2/min).
 

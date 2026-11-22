@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\AutomationSetting;
 use App\Models\BlogCategory;
+use App\Models\PipelineRun;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -17,6 +18,7 @@ class AutomationController extends Controller
         return view('admin.ai.automation', [
             'automation' => AutomationSetting::current(),
             'blogCategories' => BlogCategory::query()->orderBy('name')->get(),
+            'recentRuns' => PipelineRun::query()->latest('id')->limit(5)->get(),
         ]);
     }
 

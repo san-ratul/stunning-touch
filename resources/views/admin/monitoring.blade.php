@@ -131,7 +131,12 @@
                         <li class="px-5 py-3">
                             <div class="flex items-center justify-between gap-3">
                                 <p class="truncate text-slate-800">{{ $run->topic ?? '—' }}</p>
-                                <span class="{{ match ($run->status) { 'completed' => 'badge-green', 'failed' => 'badge-red', default => 'badge-amber' } }}">{{ ucfirst($run->status) }}</span>
+                                <span class="whitespace-nowrap">
+                                    @if($run->status === 'completed' && $run->blog_post_id)
+                                        <span class="{{ $run->published ? 'badge-green' : 'badge-amber' }}">{{ $run->published ? 'published' : 'draft' }}</span>
+                                    @endif
+                                    <span class="{{ match ($run->status) { 'completed' => 'badge-green', 'failed' => 'badge-red', default => 'badge-amber' } }}">{{ ucfirst($run->status) }}</span>
+                                </span>
                             </div>
                             <p class="mt-1 text-xs text-slate-500">
                                 {{ $run->slot_date?->format('M j') }} {{ $run->slot }} · attempt {{ $run->attempts }}
@@ -141,7 +146,7 @@
                                 @endif
                             </p>
                             @if($run->error_message)
-                                <p class="mt-1 text-xs text-red-600">{{ \Illuminate\Support\Str::limit($run->error_message, 180) }}</p>
+                                <p class="mt-1 text-xs {{ $run->status === 'completed' ? 'text-amber-600' : 'text-red-600' }}">{{ \Illuminate\Support\Str::limit($run->error_message, 180) }}</p>
                             @endif
                         </li>
                     @endforeach

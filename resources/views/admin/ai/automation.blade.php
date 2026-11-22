@@ -10,9 +10,11 @@
         <div class="card p-6 md:col-span-2">
             <h2 class="mb-1 font-bold text-slate-900">Daily AI Content Automation</h2>
             <p class="mb-5 text-sm text-slate-600">
-                When enabled, the scheduled command <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">blog:generate-daily</code>
-                creates one AI draft per run. Drafts always require admin review unless auto-publish is explicitly enabled below.
-                Requires the cron job to be configured on your hosting — see <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">.docs/CRON_SETUP.md</code>.
+                When enabled, the scheduled command <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">blog:auto-pipeline</code>
+                generates articles at the publishing slots below (up to the posts-per-day limit). Drafts always require admin
+                review unless auto-publish is explicitly enabled below — and auto-published articles must also pass all
+                mandatory quality checks. Requires the cron job to be configured on your hosting — see
+                <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">.docs/CRON_SETUP.md</code>.
             </p>
             @if(!$automation->last_run_at && $automation->is_enabled)
                 <p class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -140,6 +142,41 @@
             </div>
         </div>
     </form>
+
+    @if($automation->is_enabled)
+        <div class="card mt-6 max-w-4xl p-6">
+            <h2 class="mb-4 font-bold text-slate-900">Recent Pipeline Activity</h2>
+            @if($recentRuns->isEmpty())
+                <p class="text-sm text-slate-500">No pipeline runs yet. Once the cron job fires, each generation attempt appears here with its outcome — including why an article stayed a draft.</p>
+            @else
+                <ul class="divide-y divide-slate-100 text-sm">
+                    @foreach($recentRuns as $run)
+                        <li class="py-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <p class="truncate text-slate-800">{{ $run->topic ?? '—' }}</p>
+                                <span class="whitespace-nowrap">
+                                    @if($run->status === 'completed' && $run->blog_post_id)
+                                        <span class="{{ $run->published ? 'badge-green' : 'badge-amber' }}">{{ $run->published ? 'published' : 'draft' }}</span>
+                                    @endif
+                                    <span class="{{ match ($run->status) { 'completed' => 'badge-green', 'failed' => 'badge-red', default => 'badge-amber' } }}">{{ ucfirst($run->status) }}</span>
+                                </span>
+                            </div>
+                            <p class="mt-1 text-xs text-slate-500">
+                                {{ $run->slot_date?->format('M j') }} {{ $run->slot }} · attempt {{ $run->attempts }}
+                                @if($run->blog_post_id)
+                                    · <a href="{{ route('admin.blog.posts.edit', $run->blog_post_id) }}" class="text-brand-600">Open post</a>
+                                @endif
+                            </p>
+                            @if($run->error_message)
+                                <p class="mt-1 text-xs {{ $run->status === 'completed' ? 'text-amber-600' : 'text-red-600' }}">{{ \Illuminate\Support\Str::limit($run->error_message, 200) }}</p>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+                <p class="mt-3 text-xs text-slate-500">Full history, research runs and quality metrics live on the monitoring page.</p>
+            @endif
+        </div>
+    @endif
 
     <form method="POST" action="{{ route('admin.image-settings.update') }}" class="card mt-6 max-w-4xl p-6">
         @csrf
