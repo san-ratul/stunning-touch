@@ -25,9 +25,14 @@ bounded article attempt per invocation:
 5. **Keywords** — `KeywordService` derives focus/secondary keywords and search
    intent from real data. Volumes are never fabricated.
 6. **Generation** — `BlogGeneratorService` writes the article with research
-   extracts in the prompt, persists provenance to `blog_research_sources`,
-   validates the result (`QualityValidatorService` → `quality_reports`) and
-   auto-publishes **only** when auto-publish is enabled and validation passes.
+   extracts in the prompt (dated, with today's date and recency rules),
+   persists provenance to `blog_research_sources`, validates the result
+   (`QualityValidatorService` → `quality_reports`) and auto-publishes
+   **only** when auto-publish is enabled and validation passes. The focus
+   keyword check accepts natural phrasing (exact phrase or all keyword
+   words present), and duplicate secondary-keyword overlap only counts
+   when ≥4 keywords are actually shared — admin keyword preferences are
+   capped at two per article so unrelated topics never trip the gate.
 7. **Featured image** — `ImageService` per `featured_image_mode`; failures never block.
 8. **Finalize** — run marked completed with published flag; audit log written.
 

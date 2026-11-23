@@ -103,16 +103,35 @@ class TopicAndDuplicatesTest extends TestCase
         $this->makePost([
             'title' => 'Resize Images Properly',
             'slug' => 'resize-properly',
-            'secondary_keywords' => 'resize jpg, resize png, aspect ratio',
+            'secondary_keywords' => 'resize jpg, resize png, aspect ratio, batch resize, compress png, image quality',
         ]);
 
         $result = app(DuplicateDetectorService::class)->analyze(
             'An Entirely New Subject Line',
-            secondaryKeywords: 'resize png, aspect ratio, resize jpg'
+            secondaryKeywords: 'resize jpg, resize png, aspect ratio, batch resize, compress png, image quality'
         );
 
         $this->assertTrue($result['duplicate']);
         $this->assertEquals(100.0, $result['best_match']['secondary_keyword_overlap']);
+        $this->assertEquals(6, $result['best_match']['secondary_keyword_shared']);
+    }
+
+    public function test_small_shared_secondary_sets_are_not_duplicates(): void
+    {
+        // Admin keyword preferences appear on every article — a small set
+        // that overlaps 100% must not declare unrelated topics duplicates.
+        $this->makePost([
+            'title' => 'Completely Different Subject Line',
+            'slug' => 'completely-different-subject',
+            'secondary_keywords' => 'ai updates, chatgpt',
+        ]);
+
+        $result = app(DuplicateDetectorService::class)->analyze(
+            'Another Unrelated Headline Here',
+            secondaryKeywords: 'AI Updates, ChatGPT'
+        );
+
+        $this->assertFalse($result['duplicate'], json_encode($result['best_match']));
     }
 
     // ---- KeywordService ----
@@ -141,6 +160,29 @@ class TopicAndDuplicatesTest extends TestCase
         $this->assertEquals('compress images', $result['focus']);
         $this->assertNotEmpty($result['secondary']);
         $this->assertTrue(collect($result['secondary'])->contains(fn ($k) => str_contains($k, 'compression')));
+    }
+
+    public function test_preferred_keywords_are_capped_in_secondary_set(): void
+    {
+        // Admin keyword preferences must not crowd out topic-derived
+        // keywords — otherwise every article carries near-identical
+        // secondary keywords and trips the duplicate detector.
+        $research = new Collection([
+            new ResearchResult('https://example.com/a', 'Merge PDF documents in the browser', 'Combine documents instantly', 'web', now()->toIso8601String()),
+            new ResearchResult('https://example.com/b', 'Splitting and merging pdf files', 'No upload required', 'web', now()->toIso8601String()),
+        ]);
+
+        $result = app(KeywordService::class)->suggest('How to merge PDF files online', $research,
+            'AI Updates, ChatGPT, Claude, Free AI, free online tools, image compressor'
+        );
+
+        $secondary = collect($result['secondary'])->map(fn ($k) => mb_strtolower($k));
+
+        $this->assertCount(6, $secondary, 'Secondary set must stay at six entries.');
+        $this->assertEquals(['ai updates', 'chatgpt'], $secondary->take(2)->values()->all(), 'Only the first two preferred keywords are blended in.');
+        $this->assertTrue($secondary->slice(2)->every(fn ($k) => ! in_array($k, ['claude', 'free ai'])), 'Remaining preferred keywords must not crowd out topic-derived terms.');
+        $this->assertTrue($secondary->slice(2)->contains('documents'), 'Topic-derived keywords must survive.');
+        $this->assertEquals('merge pdf files', $result['focus'], 'Topic-derived focus is kept even with preferences set.');
     }
 
     // ---- TopicDiscoveryService ----

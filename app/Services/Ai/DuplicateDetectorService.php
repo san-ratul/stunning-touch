@@ -73,6 +73,7 @@ class DuplicateDetectorService
 
             $postSecondary = $this->keywordList((string) $post->secondary_keywords);
             $secondaryOverlap = $this->overlapPercent($secondary, $postSecondary);
+            $secondaryShared = count(array_intersect($secondary, $postSecondary));
 
             $reasons = [];
             if ($slugCollision) {
@@ -87,7 +88,11 @@ class DuplicateDetectorService
             if ($focusOverlap) {
                 $reasons[] = 'focus keyword "'.$focus.'" already targeted';
             }
-            if ($secondaryOverlap >= $threshold && $secondary !== []) {
+            // Keyword overlap alone is weak evidence: admin keyword
+            // preferences appear on every article, so small keyword sets can
+            // overlap heavily for genuinely different topics. Only count it
+            // when a substantial number of keywords is actually shared.
+            if ($secondaryOverlap >= $threshold && $secondaryShared >= 4) {
                 $reasons[] = "secondary keyword overlap {$secondaryOverlap}%";
             }
 
@@ -102,6 +107,7 @@ class DuplicateDetectorService
                 'slug_collision' => $slugCollision,
                 'focus_keyword_overlap' => $focusOverlap,
                 'secondary_keyword_overlap' => $secondaryOverlap,
+                'secondary_keyword_shared' => $secondaryShared,
                 'duplicate' => $duplicate,
                 'reasons' => $reasons,
             ];

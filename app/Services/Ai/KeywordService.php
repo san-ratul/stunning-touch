@@ -68,7 +68,12 @@ class KeywordService
             ->values();
 
         if ($preferred->isNotEmpty()) {
-            $secondary = $preferred->merge($secondary)->unique()->take(6)->values()->all();
+            // Blend at most two admin-preferred keywords into the set: the
+            // rest stays topic-derived. Merging the whole preference list
+            // made every article carry near-identical secondary keywords,
+            // which then tripped the duplicate detector for unrelated
+            // topics.
+            $secondary = $preferred->take(2)->merge($secondary)->unique()->take(6)->values()->all();
             $focus ??= $preferred->first();
         }
 

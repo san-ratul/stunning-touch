@@ -102,6 +102,29 @@ class QualityValidatorTest extends TestCase
         $this->assertTrue(collect($report->violations)->contains(fn ($v) => str_contains($v, 'Focus keyword')));
     }
 
+    public function test_focus_keyword_with_reordered_words_passes(): void
+    {
+        // Derived keywords often reorder topic words and drop short tokens
+        // ("generative ai trends" -> "generative trends innovations"), so
+        // the literal phrase never appears. Every keyword word being
+        // present must count as a pass.
+        $post = $this->validPost(['focus_keyword' => 'text case converting']);
+
+        $report = app(QualityValidatorService::class)->validate($post);
+
+        $this->assertStringNotContainsString('Focus keyword', implode("\n", $report->violations));
+    }
+
+    public function test_focus_keyword_with_genuinely_absent_word_fails(): void
+    {
+        $post = $this->validPost(['focus_keyword' => 'zebra convert text']);
+
+        $report = app(QualityValidatorService::class)->validate($post);
+
+        $this->assertFalse($report->passed);
+        $this->assertTrue(collect($report->violations)->contains(fn ($v) => str_contains($v, 'Focus keyword')));
+    }
+
     public function test_h1_heading_fails(): void
     {
         $post = $this->validPost(['content' => '<h1>Page Title</h1>'.$this->validContent()]);

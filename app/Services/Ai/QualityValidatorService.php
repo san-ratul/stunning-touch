@@ -86,10 +86,16 @@ class QualityValidatorService
             $warnings[] = 'Excerpt is empty; listing pages and SEO fallbacks will degrade.';
         }
 
-        // 3. Focus keyword presence in body text
+        // 3. Focus keyword presence in body text. Natural phrasing counts:
+        // the exact phrase passing OR every keyword word appearing (order
+        // independent) — derived keywords often reorder topic words, and a
+        // literal substring demand would block valid articles.
         $focusKeyword = trim((string) $post->focus_keyword);
         if ($focusKeyword !== '') {
-            $keywordPassed = mb_stripos($text, $focusKeyword) !== false;
+            $focusWords = collect(preg_split('/[^a-z0-9]+/', mb_strtolower($focusKeyword), -1, PREG_SPLIT_NO_EMPTY) ?: []);
+            $exactPhrase = mb_stripos($text, $focusKeyword) !== false;
+            $allWords = $focusWords->isNotEmpty() && $focusWords->every(fn ($word) => mb_stripos($text, $word) !== false);
+            $keywordPassed = $exactPhrase || $allWords;
             $checks[] = ['name' => 'focus_keyword_presence', 'passed' => $keywordPassed, 'details' => $keywordPassed ? "Focus keyword \"{$focusKeyword}\" appears in content" : 'Focus keyword missing from content'];
             if (! $keywordPassed) {
                 $violations[] = "Focus keyword \"{$focusKeyword}\" does not appear in the article body.";
