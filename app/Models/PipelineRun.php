@@ -49,6 +49,24 @@ class PipelineRun extends Model
         return $this->belongsTo(BlogPost::class);
     }
 
+    /**
+     * Live publication state: the stored flag reflects the moment the run
+     * finished, but admins may publish a draft afterwards — always trust
+     * the post's current status when it exists.
+     */
+    public function getIsPublishedAttribute(): bool
+    {
+        if ($this->relationLoaded('blogPost')) {
+            return ($this->blogPost?->status ?? ($this->published ? 'published' : 'draft')) === 'published';
+        }
+
+        if ($this->blog_post_id !== null) {
+            return optional($this->blogPost()->first())->status === 'published';
+        }
+
+        return (bool) $this->published;
+    }
+
     public function aiGeneration(): BelongsTo
     {
         return $this->belongsTo(AiGeneration::class);

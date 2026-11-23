@@ -159,6 +159,30 @@ class AutoPipelineTest extends TestCase
         $this->assertNotNull(AutomationSetting::query()->first()->last_run_at);
     }
 
+    public function test_is_published_reflects_manual_publish_after_the_run(): void
+    {
+        $this->seedProvider();
+        $this->fakePipelineHttp([
+            'slug' => 'pipeline-later-published',
+            'title' => 'Short Pipeline Article Published Later',
+            'content_html' => '<h2>Heading</h2><p>'.trim(str_repeat('word ', 40)).'</p>',
+            'focus_keyword' => 'word',
+        ]);
+        $this->enableAutomation(['auto_publish' => true]);
+
+        $run = app(BlogAutoPipeline::class)->run();
+
+        $this->assertNotNull($run);
+        $this->assertFalse($run->is_published, 'Blocked run stays unpublished right after finishing.');
+
+        BlogPost::whereKey($run->blog_post_id)->update(['status' => 'published']);
+
+        $this->assertTrue(
+            $run->fresh()->is_published,
+            'The activity card must reflect manual publishing, not the stale run flag.'
+        );
+    }
+
     public function test_generates_draft_for_due_slot_with_research_provenance(): void
     {
         Carbon::setTestNow('2026-11-17 13:00:00');
@@ -288,7 +312,50 @@ class AutoPipelineTest extends TestCase
     public function test_pipeline_rotates_topics_instead_of_repeating(): void
     {
         $this->seedProvider();
-        $this->fakePipelineHttp();
+
+        $payload = fn (string $title, string $slug, string $keyword) => [
+            'title' => $title,
+            'slug' => $slug,
+            'excerpt' => 'A guide.',
+            'content_html' => $this->validArticleContent(),
+            'focus_keyword' => $keyword,
+            'secondary_keywords' => [],
+            'seo_title' => $title,
+            'meta_description' => 'Learn more about it.',
+            'blog_category' => 'Productivity',
+        ];
+
+        // Topic-aware fake: each slot generates for the topic the pipeline
+        // actually picked, so no fixed title can collide with the other
+        // topic during discovery (a shared fixed title would make the
+        // second topic appear duplicated regardless of rotation).
+        Http::fake(function ($request) use ($payload) {
+            if (str_contains((string) $request->url(), 'chat/completions')) {
+                $isMerge = str_contains((string) $request->body(), 'Merge PDF files');
+
+                $article = $isMerge
+                    ? $payload('Merge PDF Files Without Installing Software', 'rotation-article-merge', 'merge pdf files')
+                    : $payload('How to Convert Text Case Online', 'rotation-article-case', 'convert text case');
+
+                return Http::response([
+                    'choices' => [['message' => ['content' => json_encode($article)]]],
+                    'usage' => ['prompt_tokens' => 900, 'completion_tokens' => 1200],
+                ]);
+            }
+
+            if (str_contains((string) $request->url(), 'stunningtouch.com')) {
+                return Http::response('', 200);
+            }
+
+            if (str_contains((string) $request->url(), 'hn.algolia.com')) {
+                return Http::response([
+                    'hits' => [['objectID' => '77', 'title' => 'Research extract about pdf tools', 'url' => 'https://research.example.com/pdf', 'points' => 10]],
+                ]);
+            }
+
+            return Http::response('');
+        });
+
         $this->enableAutomation([
             'posts_per_day' => 2,
             'topics' => [
@@ -307,7 +374,11 @@ class AutoPipelineTest extends TestCase
         Carbon::setTestNow('2026-11-17 19:00:00');
         $second = $pipeline->run();
         $this->assertNotNull($second);
-        $this->assertEquals('completed', $second->status);
+        $this->assertEquals(
+            'completed',
+            $second->status,
+            'RunTwo error: '.(string) $second->error_message.' | runOne topic: '.$first->topic
+        );
 
         $this->assertNotSame(
             trim((string) $first->topic),

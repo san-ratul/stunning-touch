@@ -156,7 +156,7 @@
                                 <p class="truncate text-slate-800">{{ $run->topic ?? '—' }}</p>
                                 <span class="whitespace-nowrap">
                                     @if($run->status === 'completed' && $run->blog_post_id)
-                                        <span class="{{ $run->published ? 'badge-green' : 'badge-amber' }}">{{ $run->published ? 'published' : 'draft' }}</span>
+                                        <span class="{{ $run->is_published ? 'badge-green' : 'badge-amber' }}">{{ $run->is_published ? 'published' : 'draft' }}</span>
                                     @endif
                                     <span class="{{ match ($run->status) { 'completed' => 'badge-green', 'failed' => 'badge-red', default => 'badge-amber' } }}">{{ ucfirst($run->status) }}</span>
                                 </span>

@@ -18,7 +18,7 @@ class AutomationController extends Controller
         return view('admin.ai.automation', [
             'automation' => AutomationSetting::current(),
             'blogCategories' => BlogCategory::query()->orderBy('name')->get(),
-            'recentRuns' => PipelineRun::query()->latest('id')->limit(5)->get(),
+            'recentRuns' => PipelineRun::query()->with('blogPost:id,status')->latest('id')->limit(5)->get(),
         ]);
     }
 
